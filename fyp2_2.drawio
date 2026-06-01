@@ -1,0 +1,124 @@
+<mxfile host="Electron">
+  <diagram name="Page-1" id="4cGATwXoZe2CM6Tn4fwL">
+    <mxGraphModel dx="212" dy="670" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="jMOohy9MM0J08-LjPZrA-4" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-3" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-2" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;align=center;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Raw X,Y Pixel Coordinates (Kinematic Pairs)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="60" width="190" x="335" y="3" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-6" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-5" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-3" parent="1" style="whiteSpace=wrap;html=1;align=center;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Isolate Finite Transformation (Start/End Frames)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="50" width="125" x="367.5" y="93" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-8" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-7" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-5" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Unfiltered Positional Vectors&lt;/span&gt;" vertex="1">
+          <mxGeometry height="45" width="200" x="330" y="183" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-10" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-9" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-31" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="jMOohy9MM0J08-LjPZrA-30">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-7" parent="1" style="rhombus;whiteSpace=wrap;html=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Visibility Check (≥ 8 or 12 Joints?)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="100" width="110" x="375" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-12" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-11" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-33" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-32" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-9" parent="1" style="rhombus;whiteSpace=wrap;html=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Rigid Body Constraint (Bone-Length ± 20%?)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="100" width="110" x="375" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-14" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-13" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-11" parent="1" style="whiteSpace=wrap;html=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Apply Exponential Moving Average (EMA Span=5)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="370" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-16" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-15" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-13" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Kinematically Valid Matrix (clean_pat_df)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="60" width="180" x="340" y="570" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-18" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-17" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-15" parent="1" style="whiteSpace=wrap;html=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Concatenate Spatial Arrays (x, y)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="370" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-20" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-19" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-17" parent="1" style="whiteSpace=wrap;html=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Temporal Alignment (FastDTW)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="370" y="730" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-22" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-21" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-19" parent="1" style="whiteSpace=wrap;html=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Calculate Euclidean Spatial Deviation&lt;/span&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="370" y="810" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-24" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-23" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-21" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Total Spatial Error (avg_distance)&lt;/span&gt;" vertex="1">
+          <mxGeometry height="60" width="140" x="360" y="890" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-26" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-25" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-27" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="jMOohy9MM0J08-LjPZrA-25" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-29" edge="1" parent="1" source="jMOohy9MM0J08-LjPZrA-23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="jMOohy9MM0J08-LjPZrA-28">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-23" parent="1" style="rhombus;whiteSpace=wrap;html=1;" value="&lt;span style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;avg_distance ≤ Optimal Threshold?&lt;/span&gt;" vertex="1">
+          <mxGeometry height="80" width="100" x="380" y="970" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-25" parent="1" style="whiteSpace=wrap;html=1;" value="Class 1 (Clinically Correct)" vertex="1">
+          <mxGeometry height="60" width="120" x="440" y="1080" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-28" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Class 0 (Incorrect Kinematics)" vertex="1">
+          <mxGeometry height="60" width="120" x="300" y="1080" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-30" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;i style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Drop Frame (Occlusion)&lt;/i&gt;" vertex="1">
+          <mxGeometry height="50" width="100" x="570" y="275" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-32" parent="1" style="whiteSpace=wrap;html=1;" value="&lt;i style=&quot;font-family: &amp;quot;Helvetica Neue&amp;quot;; font-size: 13px; text-align: start; background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Drop Frame (2D Foreshortening)&lt;/i&gt;" vertex="1">
+          <mxGeometry height="40" width="100" x="570" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-34" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="No" vertex="1">
+          <mxGeometry height="30" width="60" x="350" y="1040" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-35" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="No" vertex="1">
+          <mxGeometry height="30" width="60" x="490" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-37" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="No" vertex="1">
+          <mxGeometry height="30" width="60" x="492.5" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-38" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Yes" vertex="1">
+          <mxGeometry height="30" width="60" x="450" y="1040" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-39" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Yes" vertex="1">
+          <mxGeometry height="30" width="60" x="375" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="jMOohy9MM0J08-LjPZrA-40" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Yes" vertex="1">
+          <mxGeometry height="30" width="60" x="375" y="340" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
