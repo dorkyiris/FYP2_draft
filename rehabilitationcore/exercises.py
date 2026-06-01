@@ -1,13 +1,17 @@
 """
 Exercise definitions for rehabilitation system.
+Exercises are dynamically loaded from YAML configuration.
 Each exercise specifies angles, thresholds, and clinical parameters.
 """
 
+from typing import Dict, Any
 from .models import (
     ExerciseDefinition,
     AngleThreshold,
     ExerciseStatus,
 )
+from config.loader import ConfigManager
+
 
 # MediaPipe pose landmark indices (right side for consistency)
 # Reference: https://developers.google.com/mediapipe/solutions/vision/pose_detector
@@ -23,103 +27,59 @@ LANDMARK_INDICES = {
 }
 
 
-# ============================================================================
-# EXERCISE 1: ARM ABDUCTION (Shoulder Raise with Arm Straight)
-# ============================================================================
-EXERCISE_1_DEFINITION = ExerciseDefinition(
-    exercise_id=1,
-    name="Arm Abduction",
-    description="Right shoulder abduction with elbow constraint (keep arm straight)",
-    landmarks_required=[
-        LANDMARK_INDICES["right_shoulder"],
-        LANDMARK_INDICES["right_elbow"],
-        LANDMARK_INDICES["right_wrist"],
-        LANDMARK_INDICES["right_hip"],
-    ],
-    primary_angles=["elbow"],
-    angle_thresholds={
-        "elbow": AngleThreshold(
-            name="elbow_flexion",
-            min_value=160.0,  # Must keep arm straight (nearly 180°)
-            feedback_pass="✅ Form: PASS (Arm Straight)",
-            feedback_fail="❌ FAIL: Keep Arm Straight!",
-        ),
-    },
-    feedback_rules={
-        ExerciseStatus.PASS: "✅ Excellent form! Arm abduction achieved.",
-        ExerciseStatus.FAIL: "❌ Elbow bent too much. Keep arm straight at ~160°.",
-    },
-)
+def _build_exercises_from_config() -> Dict[int, ExerciseDefinition]:
+    """
+    Dynamically load all exercise definitions from YAML configuration.
+    Maps YAML threshold parameters directly to AngleThreshold dataclass.
+    """
+    config_manager = ConfigManager()
+    exercises_dict = {}
+    
+    for ex_id, ex_config in config_manager.exercises.items():
+        thresholds = {}
+        
+        # Build thresholds from YAML configuration
+        for angle_name, threshold_config in ex_config.get("thresholds", {}).items():
+            threshold_type = threshold_config.get("type", "minimum")
+            threshold_value = threshold_config.get("value")
+            
+            # Map threshold type to min/max values
+            min_val = None
+            max_val = None
+            
+            if threshold_type == "minimum":
+                min_val = threshold_value
+            elif threshold_type == "maximum":
+                max_val = threshold_value
+            elif threshold_type == "range":
+                min_val = threshold_config.get("min")
+                max_val = threshold_config.get("max")
+            
+            thresholds[angle_name] = AngleThreshold(
+                name=angle_name,
+                min_value=min_val,
+                max_value=max_val,
+                target_value=threshold_config.get("target"),
+                feedback_pass=threshold_config.get("feedback_pass"),
+                feedback_fail=threshold_config.get("feedback_fail"),
+            )
+        
+        # Create ExerciseDefinition from config
+        exercises_dict[ex_id] = ExerciseDefinition(
+            exercise_id=ex_id,
+            name=ex_config.get("name", f"Exercise {ex_id}"),
+            description=ex_config.get("description", ""),
+            landmarks_required=ex_config.get("landmarks", []),
+            primary_angles=list(thresholds.keys()),
+            angle_thresholds=thresholds,
+            feedback_rules={},
+        )
+    
+    return exercises_dict
 
 
-# ============================================================================
-# EXERCISE 2: ARM V-TO-W TRANSITION (Shoulder Flexion 120° to 90°)
-# ============================================================================
-EXERCISE_2_DEFINITION = ExerciseDefinition(
-    exercise_id=2,
-    name="Arm V-to-W Transition",
-    description="Shoulder flexion transition from V-shape (120°) to W-shape (90°)",
-    landmarks_required=[
-        LANDMARK_INDICES["right_shoulder"],
-        LANDMARK_INDICES["right_elbow"],
-        LANDMARK_INDICES["right_wrist"],
-        LANDMARK_INDICES["right_hip"],
-    ],
-    primary_angles=["shoulder"],
-    angle_thresholds={
-        "shoulder": AngleThreshold(
-            name="shoulder_flexion",
-            min_value=85.0,  # W-shape minimum
-            max_value=125.0,  # V-shape maximum
-            target_value=105.0,  # Middle transition zone
-            feedback_pass="✅ Target Transition Achieved",
-            feedback_fail="⏳ Keep transitioning between V and W",
-            feedback_transitioning="⏳ Transitioning between shapes",
-        ),
-    },
-    feedback_rules={
-        ExerciseStatus.PASS: "✅ Perfect V-to-W transition!",
-        ExerciseStatus.TRANSITIONING: "⏳ Keep moving between V (120°) and W (90°)",
-        ExerciseStatus.FAIL: "❌ Out of target range. Maintain 85-125° shoulder angle.",
-    },
-)
-
-
-# ============================================================================
-# EXERCISE 3: INCLINED PUSH-UP (Elbow Flexion Depth)
-# ============================================================================
-EXERCISE_3_DEFINITION = ExerciseDefinition(
-    exercise_id=3,
-    name="Inclined Push-up",
-    description="Inclined push-up with elbow flexion depth requirement",
-    landmarks_required=[
-        LANDMARK_INDICES["right_shoulder"],
-        LANDMARK_INDICES["right_elbow"],
-        LANDMARK_INDICES["right_wrist"],
-        LANDMARK_INDICES["right_hip"],
-    ],
-    primary_angles=["elbow"],
-    angle_thresholds={
-        "elbow": AngleThreshold(
-            name="elbow_flexion_depth",
-            max_value=100.0,  # Must achieve sufficient depth (100° or less)
-            feedback_pass="✅ Depth: PASS",
-            feedback_fail="❌ FAIL: Go Deeper!",
-        ),
-    },
-    feedback_rules={
-        ExerciseStatus.PASS: "✅ Great depth! Maintaining proper form.",
-        ExerciseStatus.FAIL: "❌ Not deep enough. Bend elbow more (aim for <100°)",
-    },
-)
-
-
-# Registry of all exercises
-EXERCISES = {
-    1: EXERCISE_1_DEFINITION,
-    2: EXERCISE_2_DEFINITION,
-    3: EXERCISE_3_DEFINITION,
-}
+# Global registry of exercises loaded from config
+EXERCISES: Dict[int, ExerciseDefinition] = _build_exercises_from_config()
 
 
 def get_exercise(exercise_id: int) -> ExerciseDefinition:

@@ -1,0 +1,86 @@
+# config/exercises.yaml
+# Exercise definitions for rehabilitation system
+# Each exercise defines landmarks and thresholds for clinical assessment
+
+exercises:
+  # Original exercises (Phase 1 - for backward compatibility)
+  1:
+    name: "Arm Abduction"
+    description: "Right shoulder abduction with elbow constraint (keep arm straight)"
+    landmarks: [12, 14, 16, 24]  # Shoulder, Elbow, Wrist, Hip
+    thresholds:
+      elbow:
+        type: "minimum"
+        value: 160.0
+        feedback_pass: "✅ Form: PASS (Arm Straight)"
+        feedback_fail: "❌ FAIL: Keep Arm Straight!"
+  
+  2:
+    name: "Arm V-to-W Transition"
+    description: "Shoulder flexion transition from V-shape (120°) to W-shape (90°)"
+    landmarks: [12, 14, 16, 24]  # Shoulder, Elbow, Wrist, Hip
+    thresholds:
+      shoulder:
+        type: "range"
+        min: 85.0
+        max: 125.0
+        target: 105.0
+        feedback_pass: "✅ Target Transition Achieved"
+        feedback_fail: "⏳ Keep transitioning between V and W"
+  
+  3:
+    name: "Inclined Push-up"
+    description: "Inclined push-up with elbow flexion depth requirement"
+    landmarks: [12, 14, 16, 24]  # Shoulder, Elbow, Wrist, Hip
+    thresholds:
+      elbow:
+        type: "maximum"
+        value: 100.0
+        feedback_pass: "✅ Depth: PASS"
+        feedback_fail: "❌ FAIL: Go Deeper!"
+  
+  # New clinical exercises (Phase 2)
+  4:
+    name: "Lifting an object"
+    description: "Shoulder flexion and elbow tracking while lifting"
+    landmarks: [12, 14, 16, 24]  # Shoulder, Elbow, Wrist, Hip
+    thresholds:
+      shoulder:
+        type: "minimum"
+        value: 90.0
+        feedback_pass: "✅ Lift Height: PASS"
+        feedback_fail: "❌ FAIL: Lift Higher!"
+  
+  5:
+    name: "Extending the elbow"
+    description: "Full elbow extension practice"
+    landmarks: [12, 14, 16, 24]  # Shoulder, Elbow, Wrist, Hip
+    thresholds:
+      elbow:
+        type: "minimum"
+        value: 160.0
+        feedback_pass: "✅ Extension: PASS (Arm Straight)"
+        feedback_fail: "❌ FAIL: Keep Arm Straight!"
+  
+  6:
+    name: "Lifting the wrist"
+    description: "Wrist extension/flexion tracking"
+    landmarks: [14, 16, 18, 20]  # Elbow, Wrist, Pinky, Index
+    thresholds:
+      wrist:
+        type: "minimum"
+        value: 15.0  # Threshold for wrist angular deviation
+        feedback_pass: "✅ Wrist Lift: PASS"
+        feedback_fail: "❌ FAIL: Lift Wrist More"
+  
+  7:
+    name: "Opening the hand"
+    description: "Finger extension and hand opening"
+    landmarks: [16, 18, 20, 22]  # Wrist, Pinky, Index, Thumb
+    thresholds:
+      hand_open:
+        type: "minimum"
+        value: 45.0  # Angular/distance expansion between thumb and index
+        feedback_pass: "✅ Hand Open: PASS"
+        feedback_fail: "❌ FAIL: Open Hand Wider!"
+
