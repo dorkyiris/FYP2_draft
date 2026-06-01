@@ -1,0 +1,291 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    FYP2 PROJECT STRUCTURE (Complete)
+═══════════════════════════════════════════════════════════════════════════════
+
+FYP2/ (Project Root)
+│
+├─── 📋 DOCUMENTATION (Planning & Reference)
+│   ├─ README.md (project overview)
+│   ├─ PHASE_1_QUICKSTART.md (Phase 1 quick start)
+│   ├─ PHASE_1_SUMMARY.md (Phase 1 detailed summary)
+│   ├─ PHASE_2_KICKOFF.md (Phase 2 original spec)
+│   ├─ ROADMAP_PHASES_2_TO_7.md ✨ NEW (complete roadmap)
+│   ├─ PROJECT_FLOWCHART.md ✨ NEW (architecture flowchart)
+│   ├─ PLANNING_SUMMARY.md ✨ NEW (quick reference)
+│   └─ PROJECT_STRUCTURE.txt (this file)
+│
+├─── 🧠 CORE ENGINE (rehabilitationcore/)
+│   ├─ __init__.py (public API)
+│   ├─ models.py (data classes: Landmark, ExerciseDefinition, etc)
+│   ├─ biomechanics.py (pure math: calculate_2d_angle, smooth_signal, etc)
+│   ├─ exercises.py (exercise definitions: EXERCISE_1/2/3)
+│   ├─ analyzer.py (ExerciseAnalyzer: main entry point)
+│   ├─ errors.py (Phase 3: custom exceptions)
+│   └─ logging.py (Phase 3: structured logging)
+│
+├─── 🎥 VIDEO PROCESSING (video/)
+│   ├─ __init__.py (PoseExtractionPipeline)
+│   ├─ calculator.py (KinematicCalculator: landmarks to angles)
+│   └─ renderer.py (VideoRenderer: draw_clinical_overlay, create_output_video)
+│
+├─── ⚙️ CONFIGURATION (Phase 2: config/)
+│   ├─ __init__.py
+│   ├─ loader.py (ConfigManager class)
+│   ├─ exercises.yaml (exercise definitions)
+│   └─ system.yaml (system parameters)
+│
+├─── 🧪 TESTS (tests/)
+│   ├─ conftest.py (pytest fixtures)
+│   ├─ unit/
+│   │  ├─ test_biomechanics.py (20 tests: angles, distances, smoothing)
+│   │  ├─ test_analyzer.py (10 tests: exercise analysis)
+│   │  └─ test_config.py (Phase 2: configuration tests)
+│   ├─ integration/ (Phase 5: integration tests)
+│   └─ e2e/ (Phase 5: end-to-end tests)
+│
+├─── 🌐 REST API (Phase 6: api/)
+│   ├─ app.py (Flask/FastAPI application)
+│   ├─ routes/
+│   │  ├─ analyze.py (POST /analyze)
+│   │  ├─ exercises.py (GET /exercises)
+│   │  └─ config.py (GET /config)
+│   ├─ models.py (request/response schemas)
+│   ├─ auth.py (API key validation)
+│   └─ middleware.py (logging, error handling)
+│
+├─── 📊 DOCUMENTATION (Phase 4: docs/)
+│   ├─ API.md (API reference)
+│   ├─ DEVELOPMENT.md (developer guide)
+│   ├─ USER_GUIDE.md (user manual)
+│   ├─ ARCHITECTURE.md (system architecture)
+│   └─ examples/ (runnable examples)
+│
+├─── 📈 MONITORING (Phase 7: monitoring/)
+│   └─ metrics.py (Prometheus metrics)
+│
+├─── 🚀 DEPLOYMENT (Phase 7: deployment/)
+│   ├─ Dockerfile (containerization)
+│   ├─ docker-compose.yml (orchestration)
+│   └─ .github/workflows/ci.yml (GitHub Actions)
+│
+├─── 🎨 UI LAYER
+│   ├─ app.py (original Streamlit app - for reference)
+│   ├─ app.py.backup (backup of original)
+│   └─ app_refactored.py (refactored app using new modules)
+│
+├─── 📦 DEPENDENCIES
+│   ├─ requirements.txt (Python packages)
+│   └─ .dockerignore (Docker optimization)
+│
+└─── 🔧 GIT
+    └─ .git/
+        └─ Commits: 5 total
+            ├─ 6ae04e9: Add planning for Phases 2-7 ✨
+            ├─ 44c00c0: Phase 1 cleanup per CLAUDE.md ✨
+            ├─ e45a06b: Add tests and video pipeline
+            ├─ 7a62035: Add README
+            └─ edf6dc7: Initial commit
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                    PHASE PROGRESSION & FILE CREATION
+═══════════════════════════════════════════════════════════════════════════════
+
+Phase 1 ✅ COMPLETE (Already done)
+├─ rehabilitationcore/ (6 files, 683 lines)
+├─ video/ (3 files, 573 lines)
+├─ tests/unit/ (3 files, 503 lines)
+├─ app_refactored.py (456 lines)
+└─ Status: 30/30 tests passing, ready for Phase 2
+
+Phase 2 📋 PLANNED (Configuration)
+├─ Create: config/ (3 files)
+│  ├─ __init__.py
+│  ├─ loader.py (ConfigManager)
+│  ├─ exercises.yaml (data)
+│  └─ system.yaml (data)
+├─ Modify: rehabilitationcore/exercises.py
+├─ Add: tests/unit/test_config.py
+└─ Target: 40+ tests, YAML-driven parameters
+
+Phase 3 📋 PLANNED (Error Handling)
+├─ Create: rehabilitationcore/errors.py
+├─ Create: rehabilitationcore/logging.py
+├─ Modify: All modules for error handling
+├─ Add: tests/unit/test_errors.py
+└─ Target: 50+ tests, graceful failures
+
+Phase 4 📋 PLANNED (Documentation)
+├─ Create: docs/ (5+ files)
+│  ├─ API.md
+│  ├─ DEVELOPMENT.md
+│  ├─ USER_GUIDE.md
+│  ├─ ARCHITECTURE.md
+│  └─ examples/
+├─ Modify: README.md, PHASE_1_QUICKSTART.md
+└─ Target: 100+ pages, complete guides
+
+Phase 5 📋 PLANNED (Testing Infrastructure)
+├─ Create: tests/integration/ (2-3 files)
+├─ Create: tests/e2e/ (2-3 files)
+├─ Create: tests/fixtures/ (helper data)
+├─ Expand: tests/unit/ (more edge cases)
+└─ Target: 70+ tests, 85%+ coverage
+
+Phase 6 📋 PLANNED (REST API)
+├─ Create: api/ (5+ files)
+│  ├─ app.py
+│  ├─ routes/ (3+ files)
+│  ├─ models.py
+│  ├─ auth.py
+│  └─ middleware.py
+├─ Create: tests/api/ (test files)
+├─ Create: Dockerfile
+└─ Target: 85+ tests, working endpoints
+
+Phase 7 📋 PLANNED (Deployment)
+├─ Create: docker-compose.yml
+├─ Create: .github/workflows/ci.yml
+├─ Create: monitoring/metrics.py
+├─ Create: scripts/load_test.py
+├─ Create: DEPLOYMENT.md
+└─ Target: Automated deployment, monitoring
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        FILE METRICS & GROWTH
+═══════════════════════════════════════════════════════════════════════════════
+
+Phase 1 (Current):
+├─ Python Code: ~1,700 lines
+├─ Tests: ~500 lines (30 tests)
+├─ Configuration: ~50 lines
+├─ Documentation: ~2,000 lines
+└─ Total: ~4,250 lines
+
+Phase 2-7 (Projected):
+├─ Python Code: +3,000 lines (config, errors, logging, API)
+├─ Tests: +1,500 lines (60+ new tests)
+├─ Configuration: +200 lines
+├─ Documentation: +2,000 lines (guides, examples)
+└─ Total Project: ~8,000+ lines
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        KEY COMPONENTS BY RESPONSIBILITY
+═══════════════════════════════════════════════════════════════════════════════
+
+Core Logic (rehabilitationcore/)
+├─ Pure math (biomechanics.py)
+├─ Type-safe models (models.py)
+├─ Exercise definitions (exercises.py)
+├─ Analysis orchestration (analyzer.py)
+├─ Error handling (errors.py) - Phase 3
+└─ Logging (logging.py) - Phase 3
+
+Video Processing (video/)
+├─ Pose extraction (PoseExtractionPipeline)
+├─ Kinematic calculations (calculator.py)
+└─ Frame rendering (renderer.py)
+
+Configuration (config/) - Phase 2
+├─ YAML loading (loader.py)
+├─ Validation (ConfigManager)
+├─ Exercise definitions (exercises.yaml)
+└─ System parameters (system.yaml)
+
+API Layer (api/) - Phase 6
+├─ Request handling
+├─ Response serialization
+├─ Authentication
+└─ Error responses
+
+Deployment (Phase 7)
+├─ Containerization
+├─ CI/CD automation
+├─ Monitoring
+└─ Load testing
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        TEST DISTRIBUTION
+═══════════════════════════════════════════════════════════════════════════════
+
+Phase 1 (30 tests):
+├─ test_biomechanics.py: 20 tests
+│  ├─ Angle calculations (7)
+│  ├─ Exercise scenarios (5)
+│  ├─ Signal smoothing (4)
+│  └─ Distance metrics (3)
+└─ test_analyzer.py: 10 tests
+   ├─ Exercise 1 analysis (3)
+   ├─ Exercise 2 analysis (2)
+   ├─ Exercise 3 analysis (2)
+   ├─ Sequence processing (2)
+   └─ Result properties (1)
+
+Phase 2 (+10 tests → 40 total):
+└─ test_config.py: 10 tests
+   ├─ Config loading (3)
+   ├─ Exercise definitions (3)
+   ├─ Threshold validation (2)
+   └─ System config (2)
+
+Phase 3 (+10 tests → 50 total):
+└─ test_errors.py: 10 tests
+   ├─ Error scenarios (5)
+   ├─ Graceful failures (3)
+   └─ Logging capture (2)
+
+Phase 4 (no new tests):
+└─ Documentation examples (all runnable)
+
+Phase 5 (+20 tests → 70 total):
+├─ tests/integration/: 10+ tests
+│  ├─ Config → Analyzer flow
+│  ├─ Video → Analysis pipeline
+│  └─ API → Result serialization
+└─ tests/e2e/: 10+ tests
+   └─ Complete workflows
+
+Phase 6 (+15 tests → 85 total):
+└─ tests/api/: 15 tests
+   ├─ Endpoint responses (5)
+   ├─ Request validation (4)
+   ├─ Authentication (3)
+   └─ Error handling (3)
+
+Phase 7 (no new tests):
+└─ Load testing (performance, not unit tests)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                        DEPENDENCIES & IMPORTS
+═══════════════════════════════════════════════════════════════════════════════
+
+External:
+├─ numpy (math, array operations)
+├─ pandas (data analysis)
+├─ opencv-cv2 (video processing)
+├─ mediapipe (pose detection)
+├─ streamlit (UI - Phase 1)
+├─ pyyaml (config loading - Phase 2)
+├─ flask or fastapi (API - Phase 6)
+├─ pytest (testing)
+└─ pydantic (validation - Phase 6)
+
+Internal Dependencies (No Cycles):
+├─ rehabilitationcore/__init__.py
+│  └─ Exports: Landmark, ExerciseAnalyzer, etc.
+├─ video/__init__.py
+│  └─ Exports: PoseExtractionPipeline
+├─ config/__init__.py (Phase 2)
+│  └─ Exports: ConfigManager
+└─ All tests import from public APIs
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Generated: 2026-06-01
+Status: Ready for Phase 2 ✓
+
