@@ -12,7 +12,7 @@ from .models import (
 )
 from .biomechanics import calculate_2d_angle
 from .exercises import EXERCISES, get_exercise, list_exercises
-from .analyzer import BiomechanicalAnalyzer, ExerciseAnalyzer
+from .analyzer import ExerciseAnalyzer
 
 __version__ = "1.0.0"
 __all__ = [
@@ -21,7 +21,6 @@ __all__ = [
     "ExerciseResult",
     "AngleThreshold",
     "ExerciseStatus",
-    "BiomechanicalAnalyzer",
     "ExerciseAnalyzer",
     "calculate_2d_angle",
     "EXERCISES",

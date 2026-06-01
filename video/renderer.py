@@ -5,10 +5,9 @@ Video rendering: Draw clinical overlays on video frames.
 import cv2
 import numpy as np
 import logging
-from typing import List, Tuple
+from typing import Tuple
 
 from rehabilitationcore.models import Landmark, ExerciseResult, ExerciseStatus
-from rehabilitationcore.biomechanics import calculate_2d_angle
 
 logger = logging.getLogger(__name__)
 
@@ -16,92 +15,12 @@ logger = logging.getLogger(__name__)
 class VideoRenderer:
     """Render clinical annotations on video frames."""
     
-    # Color scheme (BGR format for OpenCV)
     COLORS = {
-        ExerciseStatus.PASS: (0, 255, 0),  # Green
-        ExerciseStatus.FAIL: (0, 0, 255),  # Red
-        ExerciseStatus.TRANSITIONING: (0, 165, 255),  # Orange
-        ExerciseStatus.TRACKING: (255, 0, 0),  # Blue (tracking state)
+        ExerciseStatus.PASS: (0, 255, 0),
+        ExerciseStatus.FAIL: (0, 0, 255),
+        ExerciseStatus.TRANSITIONING: (0, 165, 255),
+        ExerciseStatus.TRACKING: (255, 0, 0),
     }
-    
-    @staticmethod
-    def draw_landmarks(
-        frame: np.ndarray,
-        landmarks: List[Landmark],
-        required_indices: List[int],
-        min_visibility: float = 0.65,
-        radius: int = 5,
-    ) -> np.ndarray:
-        """
-        Draw pose landmarks on frame.
-        
-        Args:
-            frame: OpenCV frame
-            landmarks: List of Landmark objects
-            required_indices: Which landmarks to highlight
-            min_visibility: Minimum visibility threshold
-            radius: Circle radius for landmark points
-        
-        Returns:
-            Frame with drawn landmarks
-        """
-        height, width = frame.shape[:2]
-        
-        for idx in required_indices:
-            if idx >= len(landmarks):
-                continue
-            
-            landmark = landmarks[idx]
-            if landmark.visibility < min_visibility:
-                continue
-            
-            x = int(landmark.x * width)
-            y = int(landmark.y * height)
-            
-            # Draw circle at landmark
-            cv2.circle(frame, (x, y), radius, (0, 255, 255), -1)
-        
-        return frame
-    
-    @staticmethod
-    def draw_skeleton(
-        frame: np.ndarray,
-        landmarks: List[Landmark],
-        connections: List[Tuple[int, int]],
-        color: Tuple[int, int, int] = (0, 255, 0),
-        thickness: int = 4,
-    ) -> np.ndarray:
-        """
-        Draw skeleton lines connecting landmarks.
-        
-        Args:
-            frame: OpenCV frame
-            landmarks: List of Landmark objects
-            connections: List of (from_idx, to_idx) pairs
-            color: Line color (BGR)
-            thickness: Line thickness
-        
-        Returns:
-            Frame with drawn skeleton
-        """
-        height, width = frame.shape[:2]
-        
-        for from_idx, to_idx in connections:
-            if from_idx >= len(landmarks) or to_idx >= len(landmarks):
-                continue
-            
-            from_lm = landmarks[from_idx]
-            to_lm = landmarks[to_idx]
-            
-            if from_lm.visibility < 0.5 or to_lm.visibility < 0.5:
-                continue
-            
-            from_pt = (int(from_lm.x * width), int(from_lm.y * height))
-            to_pt = (int(to_lm.x * width), int(to_lm.y * height))
-            
-            cv2.line(frame, from_pt, to_pt, color, thickness)
-        
-        return frame
     
     @staticmethod
     def draw_clinical_overlay(
