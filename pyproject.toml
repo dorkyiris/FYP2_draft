@@ -1,0 +1,17 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow",
+    "requires_video: marks tests requiring video files",
+]
+
+[tool.coverage.run]
+source = ["rehabilitationcore", "config", "video"]
+omit = [
+    "video/__init__.py",   # MediaPipe wrapper — needs live camera, not unit-testable
+    "video/renderer.py",   # OpenCV drawing — needs a display, not unit-testable
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 85

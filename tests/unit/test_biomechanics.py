@@ -186,5 +186,85 @@ class TestDistance:
         assert d1 == d2
 
 
+class TestCalculate3DAngle:
+    """Tests for 3D angle calculation."""
+
+    def test_straight_line_3d(self):
+        """Three collinear 3D points should give 180°."""
+        import numpy as np
+        result = calculate_3d_angle(
+            np.array([0.0, 0.0, 0.0]),
+            np.array([1.0, 0.0, 0.0]),
+            np.array([2.0, 0.0, 0.0]),
+        )
+        assert abs(result - 180.0) < 0.1
+
+    def test_right_angle_3d(self):
+        """Perpendicular vectors should give 90°."""
+        import numpy as np
+        result = calculate_3d_angle(
+            np.array([1.0, 0.0, 0.0]),
+            np.array([0.0, 0.0, 0.0]),
+            np.array([0.0, 1.0, 0.0]),
+        )
+        assert abs(result - 90.0) < 0.1
+
+    def test_result_in_range(self):
+        """3D angle should always be in [0, 180]."""
+        import numpy as np
+        result = calculate_3d_angle(
+            np.array([1.0, 1.0, 0.0]),
+            np.array([0.0, 0.0, 0.0]),
+            np.array([0.0, 1.0, 1.0]),
+        )
+        assert 0.0 <= result <= 180.0
+
+
+class TestSmoothingEdgeCases:
+    """Additional edge cases for smooth_signal."""
+
+    def test_unknown_method_raises(self):
+        with pytest.raises(ValueError, match="Unknown smoothing method"):
+            smooth_signal([1.0, 2.0, 3.0], method="unknown")
+
+    def test_sma_with_all_nan_window(self):
+        """SMA window of all NaN should fall back to raw value."""
+        result = smooth_signal([float("nan"), float("nan"), 5.0], method="sma", span=3)
+        # Last value should resolve to 5.0 (only non-NaN in window)
+        assert not any(v != v for v in result[-1:])  # last value is not NaN
+
+    def test_single_value_unchanged(self):
+        result = smooth_signal([42.0])
+        assert result == [42.0]
+
+
+class TestValidateLandmarkChain:
+    """Tests for validate_landmark_chain including out-of-range path."""
+
+    def test_out_of_range_index_returns_false(self):
+        """Index beyond list length should return (False, reason)."""
+        from rehabilitationcore.models import Landmark
+        from rehabilitationcore.biomechanics import validate_landmark_chain
+        short_list = [Landmark(x=0.5, y=0.5, z=0, visibility=0.9) for _ in range(5)]
+        is_valid, msg = validate_landmark_chain(short_list, [10], min_visibility=0.65)
+        assert is_valid is False
+        assert "out of range" in msg
+
+    def test_low_visibility_returns_false(self):
+        from rehabilitationcore.models import Landmark
+        from rehabilitationcore.biomechanics import validate_landmark_chain
+        lms = [Landmark(x=0.5, y=0.5, z=0, visibility=0.2) for _ in range(33)]
+        is_valid, msg = validate_landmark_chain(lms, [12], min_visibility=0.65)
+        assert is_valid is False
+
+    def test_all_valid_returns_true(self):
+        from rehabilitationcore.models import Landmark
+        from rehabilitationcore.biomechanics import validate_landmark_chain
+        lms = [Landmark(x=0.5, y=0.5, z=0, visibility=0.9) for _ in range(33)]
+        is_valid, msg = validate_landmark_chain(lms, [12, 14, 16, 24], min_visibility=0.65)
+        assert is_valid is True
+        assert msg == ""
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -10,6 +10,7 @@ from .models import (
     AngleThreshold,
     ExerciseStatus,
 )
+from .errors import ExerciseNotFoundError
 from config.loader import ConfigManager
 
 
@@ -83,12 +84,9 @@ EXERCISES: Dict[int, ExerciseDefinition] = _build_exercises_from_config()
 
 
 def get_exercise(exercise_id: int) -> ExerciseDefinition:
-    """Get exercise definition by ID."""
+    """Get exercise definition by ID. Raises ExerciseNotFoundError if not found."""
     if exercise_id not in EXERCISES:
-        raise ValueError(
-            f"Unknown exercise ID: {exercise_id}. "
-            f"Available: {list(EXERCISES.keys())}"
-        )
+        raise ExerciseNotFoundError(exercise_id, available=sorted(EXERCISES.keys()))
     return EXERCISES[exercise_id]
 
 

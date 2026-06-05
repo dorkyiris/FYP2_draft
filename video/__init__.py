@@ -4,7 +4,6 @@ Decoupled from UI and biomechanical calculations.
 """
 
 import cv2
-import mediapipe as mp
 import logging
 from typing import List, Tuple, Optional
 import numpy as np
@@ -13,7 +12,7 @@ from rehabilitationcore.models import Landmark
 
 logger = logging.getLogger(__name__)
 
-mp_pose = mp.solutions.pose
+# mediapipe imported lazily inside __enter__ to avoid TensorFlow loading at import time
 
 
 class PoseExtractionPipeline:
@@ -42,7 +41,9 @@ class PoseExtractionPipeline:
         self.pose = None
     
     def __enter__(self):
-        """Context manager entry."""
+        """Context manager entry — loads MediaPipe here to keep import-time clean."""
+        import mediapipe as mp
+        mp_pose = mp.solutions.pose
         self.pose = mp_pose.Pose(
             static_image_mode=False,
             model_complexity=1,
