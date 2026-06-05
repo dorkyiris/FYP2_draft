@@ -13,6 +13,14 @@ from .models import (
 from .biomechanics import calculate_2d_angle
 from .exercises import EXERCISES, get_exercise, list_exercises
 from .analyzer import ExerciseAnalyzer
+from .errors import (
+    RehabSystemError,
+    ConfigError,
+    ExerciseNotFoundError,
+    LandmarkError,
+    AnalysisError,
+)
+from .logging_config import get_logger, configure_logging
 
 __version__ = "1.0.0"
 __all__ = [
@@ -26,4 +34,11 @@ __all__ = [
     "EXERCISES",
     "get_exercise",
     "list_exercises",
+    "RehabSystemError",
+    "ConfigError",
+    "ExerciseNotFoundError",
+    "LandmarkError",
+    "AnalysisError",
+    "get_logger",
+    "configure_logging",
 ]

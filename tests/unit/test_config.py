@@ -3,6 +3,7 @@
 import pytest
 from config.loader import ConfigManager
 from rehabilitationcore.exercises import EXERCISES
+from rehabilitationcore.errors import ExerciseNotFoundError, ConfigError
 
 
 class TestConfigManager:
@@ -30,9 +31,9 @@ class TestConfigManager:
         assert "landmarks" in ex1
 
     def test_get_exercise_invalid_id(self):
-        """Should raise ValueError for invalid exercise ID."""
+        """Should raise ExerciseNotFoundError for invalid exercise ID."""
         config = ConfigManager()
-        with pytest.raises(ValueError):
+        with pytest.raises(ExerciseNotFoundError):
             config.get_exercise(999)
 
     def test_get_threshold_by_angle(self):

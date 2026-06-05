@@ -1,0 +1,24 @@
+# config/system.yaml
+# Global system parameters for the rehabilitation system
+
+mediapipe:
+  min_detection_confidence: 0.65
+  min_tracking_confidence: 0.65
+  model_complexity: 1
+
+smoothing:
+  method: "ema"   # ema | sma
+  span: 3          # span=3 gives 25.5% jitter reduction (ablation study)
+
+visualization:
+  colors:
+    pass: [0, 255, 0]            # Green (BGR)
+    fail: [0, 0, 255]            # Red
+    transitioning: [0, 165, 255] # Orange
+    tracking: [255, 0, 0]        # Blue
+  font_size: 1.2
+  line_thickness: 4
+  joint_radius: 5
+
+logging:
+  level: "INFO"

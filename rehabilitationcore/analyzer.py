@@ -8,7 +8,9 @@ import logging
 from .models import Landmark, ExerciseDefinition, ExerciseResult, ExerciseStatus
 from .biomechanics import calculate_2d_angle, validate_landmark_chain
 
-logger = logging.getLogger(__name__)
+from .logging_config import get_logger
+
+logger = get_logger("analyzer")
 
 
 class ExerciseAnalyzer:
@@ -65,6 +67,10 @@ class ExerciseAnalyzer:
         )
         
         if not is_valid:
+            logger.warning(
+                "Exercise %d (%s): landmark validation failed — %s",
+                exercise.exercise_id, exercise.name, error_msg,
+            )
             return ExerciseResult(
                 exercise_id=exercise.exercise_id,
                 exercise_name=exercise.name,
@@ -98,6 +104,10 @@ class ExerciseAnalyzer:
         # Get primary angle
         primary_angle_name = exercise.primary_angles[0]
         if primary_angle_name not in angles:
+            logger.warning(
+                "Exercise %d (%s): angle '%s' not computable — unsupported landmark set",
+                exercise.exercise_id, exercise.name, primary_angle_name,
+            )
             return ExerciseResult(
                 exercise_id=exercise.exercise_id,
                 exercise_name=exercise.name,
