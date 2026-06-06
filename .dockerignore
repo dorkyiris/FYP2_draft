@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.env
+
+# Tests — not needed in the image
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Dev / IDE
+.git/
+.github/
+.idea/
+.vscode/
+*.DS_Store
+
+# Docs and scripts — not needed at runtime
+docs/
+scripts/
+*.md
+*.pdf
+*.docx
+*.xlsx
+*.png
+*.mp4
+*.m4a
+*.drawio
+*.ipynb
+
+# Large model files (loaded from env var path at runtime if needed)
+*.pt
+
+# Logs
+logs/
+*.log

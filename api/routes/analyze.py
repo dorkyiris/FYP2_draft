@@ -12,6 +12,7 @@ from api.models import (
 from rehabilitationcore.exercises import EXERCISES
 from rehabilitationcore.analyzer import ExerciseAnalyzer
 from rehabilitationcore.models import Landmark
+from monitoring.metrics import get_metrics
 
 router = APIRouter(tags=["analysis"])
 _analyzer = ExerciseAnalyzer()
@@ -48,6 +49,7 @@ def analyze_frame(req: AnalyzeRequest, _: str | None = Depends(get_api_key)):
     exercise = _exercise_or_404(req.exercise_id)
     landmarks = _request_landmarks(req.landmarks)
     result = _analyzer.analyze(landmarks, exercise, frame_number=req.frame_number)
+    get_metrics().record_analysis(req.exercise_id, result.status.value, result.confidence)
     return _result_to_response(result)
 
 
