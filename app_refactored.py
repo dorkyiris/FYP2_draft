@@ -524,10 +524,11 @@ elif app_mode == "4. Project Analytics & Stats":
 # ============================================================================
 st.markdown("---")
 st.markdown("### 🏆 System Accuracy Benchmarks (Nandana et al. 2026 dataset)")
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Ex 1 — Lifting an Object", "53.3%", "MediaPipe + EMA")
 col2.metric("Ex 2 — Extending the Elbow", "70.6%", "YOLOv8 (best)")
-col3.metric("Ex 4 — Opening the Hand", "60.5%", "YOLOv8")
+col3.metric("Ex 3 — Lifting the Wrist", "55.8%", "MediaPipe Raw")
+col4.metric("Ex 4 — Opening the Hand", "60.5%", "YOLOv8")
 
 st.markdown("""
 ---
