@@ -52,6 +52,14 @@ sns.set_theme(style="whitegrid", context="paper")
 if "analyzer" not in st.session_state:
     st.session_state.analyzer = ExerciseAnalyzer(min_visibility=0.65)
 
+
+@st.cache_resource
+def get_pose_pipeline() -> PoseExtractionPipeline:
+    """Initialise MediaPipe once per process and reuse — avoids segfaults from repeated init/teardown on macOS."""
+    pipeline = PoseExtractionPipeline()
+    pipeline.__enter__()
+    return pipeline
+
 # ============================================================================
 # SIDEBAR NAVIGATION
 # ============================================================================
@@ -189,8 +197,8 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
                     exercise = get_exercise(selected_exercise)
                     
                     # Extract poses
-                    with PoseExtractionPipeline() as pipeline:
-                        landmark_sequence = pipeline.extract_video(tfile_in.name)
+                    pipeline = get_pose_pipeline()
+                    landmark_sequence = pipeline.extract_video(tfile_in.name)
                     
                     # Analyze each frame
                     results = st.session_state.analyzer.analyze_sequence(
@@ -239,61 +247,42 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
 # ============================================================================
 elif app_mode == "3. Live Webcam Analysis 🔴":
     st.markdown("### Real-Time Webcam Analysis")
-    st.markdown("Live edge computing demonstration")
-    st.warning("⚠️ Make sure your terminal has permission to access the Mac Camera!")
-    
-    start_cam = st.checkbox("Turn On Webcam")
-    FRAME_WINDOW = st.image([])
-    status_text = st.empty()
-    
-    if start_cam:
+    st.markdown("Capture a frame from your camera and run pose analysis on it.")
+
+    img_file = st.camera_input("Capture frame for analysis")
+
+    if img_file is not None:
+        from PIL import Image as _PIL_Image
+        import io as _io
+
+        img_pil = _PIL_Image.open(img_file)
+        frame_rgb = np.array(img_pil)
+        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+
+        exercise = get_exercise(selected_exercise)
+
         try:
-            camera = cv2.VideoCapture(0)
-            exercise = get_exercise(selected_exercise)
-            
-            with PoseExtractionPipeline() as pipeline:
-                frame_count = 0
-                while start_cam:
-                    ret, frame = camera.read()
-                    if not ret:
-                        st.error("Cannot access webcam.")
-                        break
-                    
-                    frame = cv2.flip(frame, 1)  # Mirror
-                    
-                    # Extract landmarks
-                    landmarks = pipeline.extract_frame(frame)
-                    
-                    if landmarks:
-                        # Analyze
-                        result = st.session_state.analyzer.analyze(landmarks, exercise)
-                        
-                        # Draw annotations
-                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        frame_annotated = VideoRenderer.draw_clinical_overlay(
-                            frame_rgb,
-                            landmarks,
-                            result,
-                            selected_exercise,
-                        )
-                        
-                        FRAME_WINDOW.image(frame_annotated)
-                        status_text.write(f"Status: {result.status.value} | Confidence: {result.confidence:.0%}")
-                    else:
-                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        FRAME_WINDOW.image(frame_rgb)
-                        status_text.write("🔍 Searching for pose...")
-                    
-                    frame_count += 1
-            
-            camera.release()
-        
+            pipeline = get_pose_pipeline()
+            landmarks = pipeline.extract_frame(frame_bgr)
+
+            if landmarks:
+                result = st.session_state.analyzer.analyze(landmarks, exercise)
+                frame_annotated = VideoRenderer.draw_clinical_overlay(
+                    frame_rgb, landmarks, result, selected_exercise
+                )
+                st.image(frame_annotated, caption="Pose analysis result")
+                col_a, col_b = st.columns(2)
+                col_a.metric("Status", result.status.value)
+                col_b.metric("Confidence", f"{result.confidence:.0%}")
+            else:
+                st.image(frame_rgb, caption="Captured frame")
+                st.warning("No pose detected — ensure your upper body is fully visible.")
+
         except Exception as e:
-            st.error(f"Webcam error: {str(e)}")
+            st.error(f"Analysis error: {str(e)}")
             logger.error(f"Webcam processing failed: {e}", exc_info=True)
-    
     else:
-        st.info("Click the checkbox to activate the camera.")
+        st.info("Click the camera button above to capture a frame for analysis.")
 
 # ============================================================================
 # MODE 4: ANALYTICS & SYSTEM VALIDATION
@@ -401,19 +390,18 @@ elif app_mode == "4. Project Analytics & Stats":
 
             spans = [1, 2, 3, 5, 7]
 
-            # Hard-coded from offline evaluation (dataset-dependent)
-            # MediaPipe EMA-filtered accuracy per exercise, per span
+            # Measured on Nandana et al. 2026 dataset (spans: [1, 2, 3, 5, 7])
             mp_by_ex = {
-                1: [66.7, 75.0, 91.7, 83.3, 75.0],
-                2: [72.7, 72.7, 81.8, 72.7, 63.6],
-                3: [66.7, 66.7, 77.8, 72.2, 66.7],
-                4: [60.0, 65.0, 70.0, 65.0, 60.0],
+                1: [52.5, 54.1, 53.3, 53.3, 50.8],
+                2: [57.9, 57.9, 56.3, 57.1, 56.3],
+                3: [55.8, 48.3, 48.3, 48.3, 47.5],
+                4: [53.8, 53.8, 53.8, 53.8, 53.8],
             }
             yolo_by_ex = {
-                1: [58.3, 66.7, 75.0, 66.7, 58.3],
-                2: [63.6, 63.6, 72.7, 63.6, 54.5],
-                3: [55.6, 61.1, 66.7, 61.1, 55.6],
-                4: [50.0, 55.0, 60.0, 55.0, 50.0],
+                1: [50.8, 50.8, 50.8, 50.0, 50.0],
+                2: [70.6, 72.2, 70.6, 70.6, 70.6],
+                3: [47.5, 48.3, 48.3, 48.3, 48.3],
+                4: [60.5, 60.5, 60.5, 59.7, 61.3],
             }
 
             ex_labels = {1: 'Ex 1 — Lifting an Object', 2: 'Ex 2 — Extending the Elbow',
@@ -429,7 +417,7 @@ elif app_mode == "4. Project Analytics & Stats":
                 ax.set_title(ex_labels[ex_num], fontsize=11, fontweight='bold')
                 ax.set_xlabel('EMA Span')
                 ax.set_ylabel('Accuracy (%)')
-                ax.set_ylim(30, 105)
+                ax.set_ylim(30, 85)
                 ax.set_xticks(spans)
                 ax.legend(fontsize=9)
                 ax.grid(True, alpha=0.4)
