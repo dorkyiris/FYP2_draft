@@ -458,10 +458,10 @@ elif app_mode == "4. Project Analytics & Stats":
                     ['YOLOv8 Raw'] * 4  + ['YOLOv8 + EMA'] * 4
                 ),
                 'Accuracy (%)': [
-                    66.7, 72.7, 66.7, 60.0,   # MP Raw
-                    91.7, 81.8, 77.8, 70.0,   # MP + EMA
-                    58.3, 63.6, 55.6, 50.0,   # YOLO Raw
-                    75.0, 72.7, 66.7, 60.0,   # YOLO + EMA
+                    52.5, 57.9, 55.8, 53.8,   # MP Raw
+                    53.3, 56.3, 48.3, 53.8,   # MP + EMA
+                    50.8, 70.6, 47.5, 60.5,   # YOLO Raw
+                    50.8, 70.6, 48.3, 60.5,   # YOLO + EMA
                 ],
             })
 
@@ -489,9 +489,9 @@ elif app_mode == "4. Project Analytics & Stats":
 
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("MediaPipe + EMA (Ex 1)", "91.7%", "+25.0 pp vs Raw")
+                st.metric("MediaPipe + EMA (Ex 1)", "53.3%", "+0.8 pp vs Raw")
             with col2:
-                st.metric("YOLOv8 + EMA (Ex 1)", "75.0%", "+16.7 pp vs Raw")
+                st.metric("YOLOv8 + EMA (Ex 2)", "70.6%", "Best config")
 
         # ── Panel 4: Summary table ────────────────────────────────────────
         with abl4:
@@ -500,33 +500,34 @@ elif app_mode == "4. Project Analytics & Stats":
             summary_df = pd.DataFrame({
                 'Exercise': ['Ex 1 — Lifting an Object', 'Ex 2 — Extending the Elbow',
                              'Ex 3 — Lifting the Wrist', 'Ex 4 — Opening the Hand'],
-                'MediaPipe Raw (%)':  [66.7, 72.7, 66.7, 60.0],
-                'MediaPipe + EMA (%)': [91.7, 81.8, 77.8, 70.0],
-                'YOLOv8 Raw (%)':     [58.3, 63.6, 55.6, 50.0],
-                'YOLOv8 + EMA (%)':   [75.0, 72.7, 66.7, 60.0],
-                'EMA Gain — MP (pp)': [25.0, 9.1, 11.1, 10.0],
-                'EMA Gain — YOLO (pp)': [16.7, 9.1, 11.1, 10.0],
+                'MediaPipe Raw (%)':    [52.5, 57.9, 55.8, 53.8],
+                'MediaPipe + EMA (%)':  [53.3, 56.3, 48.3, 53.8],
+                'YOLOv8 Raw (%)':       [50.8, 70.6, 47.5, 60.5],
+                'YOLOv8 + EMA (%)':     [50.8, 70.6, 48.3, 60.5],
+                'EMA Gain — MP (pp)':   [+0.8, -1.6, -7.5,  0.0],
+                'EMA Gain — YOLO (pp)': [ 0.0,  0.0, +0.8,  0.0],
             })
             st.dataframe(summary_df, hide_index=True, use_container_width=True)
 
             st.markdown("""
-**Key findings:**
-- EMA smoothing (span = 3) improves accuracy by **9–25 pp** across all exercises and frameworks.
-- MediaPipe consistently outperforms YOLOv8 in upper-limb joint localisation.
-- The full pipeline (MediaPipe + EMA) reduces spatial tracking error by **25.5%** (0.04355 → 0.03314).
-- SOTA baseline (Angular DTW, no filtering) achieves ~40% — our system exceeds this in all exercises.
+**Key findings (Nandana et al. 2026 dataset):**
+- All configurations exceed the 3D-CNN baseline (**40%**) across every exercise.
+- YOLOv8 achieves the highest single result: **70.6%** on Exercise 2 (Extending the Elbow).
+- MediaPipe best: **53.3%** on Exercise 1 (Lifting an Object) with EMA span = 3.
+- EMA smoothing effect is exercise-dependent — minimal gain on this dataset (–7.5 to +0.8 pp), unlike REHAB24 where gains were larger.
+- Spatial tracking error reduced by **25.5%** (0.04355 → 0.03314) via EMA on joint coordinates.
 """)
-            st.success("Best configuration: **MediaPipe + EMA (span = 3)** across all exercises.")
+            st.success("Best single result: **YOLOv8 on Exercise 2 — 70.6%**. MediaPipe + EMA best on Ex 1 (53.3%). All configs beat the 40% 3D-CNN baseline.")
 
 # ============================================================================
 # GLOBAL FOOTER
 # ============================================================================
 st.markdown("---")
-st.markdown("### 🏆 System Accuracy Benchmarks")
+st.markdown("### 🏆 System Accuracy Benchmarks (Nandana et al. 2026 dataset)")
 col1, col2, col3 = st.columns(3)
-col1.metric("Ex 1 (Arm Abduction)", "91.7%", "+25.5% via Filter")
-col2.metric("Ex 2 (Arm V-W)", "81.8%", "Edge Optimized")
-col3.metric("Ex 3 (Push-ups)", "77.8%", "Foreshortening Prone")
+col1.metric("Ex 1 — Lifting an Object", "53.3%", "MediaPipe + EMA")
+col2.metric("Ex 2 — Extending the Elbow", "70.6%", "YOLOv8 (best)")
+col3.metric("Ex 4 — Opening the Hand", "60.5%", "YOLOv8")
 
 st.markdown("""
 ---
