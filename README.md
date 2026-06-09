@@ -212,4 +212,5 @@ Edit `config/exercises.yaml` — no code changes needed. Restart the app or API 
 
 ---
 
-**Research:** Nandana et al. 2026 — 91.7% classification accuracy (Ex1), 25.5% jitter reduction via EMA smoothing (ablation study).
+**Dataset:** Nandana et al. 2026 — 491 upper-limb stroke rehabilitation videos, 4 exercises, 10 volunteers; 3D-CNN baseline achieves **40% test accuracy** (Table 7, Data in Brief, doi:10.1016/j.dib.2026.112819).  
+**This work:** EMA filter reduces spatial tracking error by **25.5%** (0.04355 → 0.03314 normalised units).
