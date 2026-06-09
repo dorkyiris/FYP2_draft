@@ -5,7 +5,7 @@ Video rendering: Draw clinical overlays on video frames.
 import cv2
 import numpy as np
 import logging
-from typing import Tuple
+from typing import List, Tuple
 
 from rehabilitationcore.models import Landmark, ExerciseResult, ExerciseStatus
 
