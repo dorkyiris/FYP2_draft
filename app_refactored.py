@@ -187,26 +187,6 @@ if app_mode == "1. Movement Data Analysis (CSV)":
 # ============================================================================
 # MODE 2: UPLOADED VIDEO PROCESSING
 # ============================================================================
-def _transcode_h264(src_path: str) -> Optional[str]:
-    """Re-encode to browser-compatible H.264 MP4. Needed for HEVC source videos."""
-    cap = cv2.VideoCapture(src_path)
-    if not cap.isOpened():
-        return None
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    w   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    out = tempfile.NamedTemporaryFile(delete=False, suffix='_h264.mp4').name
-    writer = cv2.VideoWriter(out, cv2.VideoWriter_fourcc(*'avc1'), fps, (w, h))
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        writer.write(frame)
-    cap.release()
-    writer.release()
-    return out if os.path.exists(out) and os.path.getsize(out) > 1000 else None
-
-
 elif app_mode == "2. Upload Video Analysis (MP4)":
     st.markdown("### Video Analysis")
     st.markdown("Upload rehabilitation exercise video for real-time analysis.")
