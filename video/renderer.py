@@ -42,74 +42,62 @@ class VideoRenderer:
             Annotated frame
         """
         height, width = frame.shape[:2]
-        
-        # Landmark indices
-        r_shoulder, r_elbow, r_wrist, r_hip = 12, 14, 16, 24
-        
-        # Get coordinates
-        def get_coords(idx) -> Tuple[int, int]:
+        color = VideoRenderer.COLORS.get(exercise_result.status, (0, 255, 255))
+
+        def get_coords(idx: int) -> Tuple[int, int]:
             if idx >= len(landmarks):
                 return (0, 0)
             lm = landmarks[idx]
             return (int(lm.x * width), int(lm.y * height))
-        
-        shoulder = get_coords(r_shoulder)
-        elbow = get_coords(r_elbow)
-        wrist = get_coords(r_wrist)
-        hip = get_coords(r_hip)
-        
-        # Check visibility
-        vis_shoulder = (
-            r_shoulder < len(landmarks)
-            and landmarks[r_shoulder].visibility > 0.65
-        )
-        vis_elbow = r_elbow < len(landmarks) and landmarks[r_elbow].visibility > 0.65
-        vis_wrist = r_wrist < len(landmarks) and landmarks[r_wrist].visibility > 0.65
-        vis_hip = r_hip < len(landmarks) and landmarks[r_hip].visibility > 0.65
-        
-        # Get color based on status
-        color = VideoRenderer.COLORS.get(exercise_result.status, (0, 255, 255))
-        
-        # Draw skeleton if visible
-        if all([vis_shoulder, vis_elbow, vis_wrist]):
-            cv2.line(frame, shoulder, elbow, color, 4)
-            cv2.line(frame, elbow, wrist, color, 4)
-        
-        if all([vis_hip, vis_shoulder]) and exercise_num in [2, 3]:
-            cv2.line(frame, hip, shoulder, color, 4)
-        
-        # Draw joint circles
-        for pt in [shoulder, elbow, wrist]:
-            cv2.circle(frame, pt, 5, color, -1)
-        
-        if exercise_num in [2, 3]:
-            cv2.circle(frame, hip, 5, color, -1)
-        
-        # Draw status text and angle
-        text = exercise_result.feedback
-        y_pos = 50
-        cv2.putText(
-            frame,
-            text,
-            (40, y_pos),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.2,
-            color,
-            3,
-        )
-        
-        # Draw confidence
-        confidence_text = f"Confidence: {exercise_result.confidence:.1%}"
-        cv2.putText(
-            frame,
-            confidence_text,
-            (40, y_pos + 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (200, 200, 200),
-            2,
-        )
-        
+
+        def vis(idx: int) -> bool:
+            return idx < len(landmarks) and landmarks[idx].visibility > 0.65
+
+        # Draw exercise-specific skeleton
+        if exercise_num in (1, 2):
+            # Exercises 1 & 2: shoulder-elbow-wrist chain + hip reference
+            pts = {k: get_coords(i) for k, i in
+                   [("hip", 24), ("shoulder", 12), ("elbow", 14), ("wrist", 16)]}
+            if vis(12) and vis(14) and vis(16):
+                cv2.line(frame, pts["shoulder"], pts["elbow"], color, 4)
+                cv2.line(frame, pts["elbow"], pts["wrist"], color, 4)
+            if vis(24) and vis(12):
+                cv2.line(frame, pts["hip"], pts["shoulder"], color, 4)
+                cv2.circle(frame, pts["hip"], 5, color, -1)
+            for k in ("shoulder", "elbow", "wrist"):
+                if vis({"shoulder": 12, "elbow": 14, "wrist": 16}[k]):
+                    cv2.circle(frame, pts[k], 8, color, -1)
+
+        elif exercise_num == 3:
+            # Exercise 3 – Lifting the wrist: elbow → wrist → pinky chain
+            pts = {k: get_coords(i) for k, i in
+                   [("elbow", 14), ("wrist", 16), ("pinky", 18)]}
+            if vis(14) and vis(16):
+                cv2.line(frame, pts["elbow"], pts["wrist"], color, 4)
+            if vis(16) and vis(18):
+                cv2.line(frame, pts["wrist"], pts["pinky"], color, 4)
+            for k, i in [("elbow", 14), ("wrist", 16), ("pinky", 18)]:
+                if vis(i):
+                    cv2.circle(frame, pts[k], 8, color, -1)
+
+        elif exercise_num == 4:
+            # Exercise 4 – Opening the hand: thumb/index/pinky fan from wrist
+            pts = {k: get_coords(i) for k, i in
+                   [("wrist", 16), ("pinky", 18), ("index", 20), ("thumb", 22)]}
+            for finger_idx, idx in [("pinky", 18), ("index", 20), ("thumb", 22)]:
+                if vis(16) and vis(idx):
+                    cv2.line(frame, pts["wrist"], pts[finger_idx], color, 4)
+                if vis(idx):
+                    cv2.circle(frame, pts[finger_idx], 8, color, -1)
+            if vis(16):
+                cv2.circle(frame, pts["wrist"], 8, color, -1)
+
+        # Status text
+        cv2.putText(frame, exercise_result.feedback,
+                    (40, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 3)
+        cv2.putText(frame, f"Confidence: {exercise_result.confidence:.1%}",
+                    (40, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+
         return frame
     
     @staticmethod

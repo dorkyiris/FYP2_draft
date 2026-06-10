@@ -69,7 +69,7 @@ st.sidebar.markdown("**Phase 1–7 Complete**")
 st.sidebar.markdown("---")
 
 app_mode = st.sidebar.radio("Select Application Mode", [
-    "1. Static Data Analysis (CSV)",
+    "1. Movement Data Analysis (CSV)",
     "2. Upload Video Analysis (MP4)",
     "3. Live Webcam Analysis 🔴",
     "4. Project Analytics & Stats"
@@ -85,8 +85,8 @@ selected_exercise = st.sidebar.selectbox(
 # ============================================================================
 # MODE 1: CSV DATA ANALYSIS
 # ============================================================================
-if app_mode == "1. Static Data Analysis (CSV)":
-    st.markdown("### Static Data Analysis")
+if app_mode == "1. Movement Data Analysis (CSV)":
+    st.markdown("### Movement Data Analysis")
     st.markdown("Automated clinical grading using **MediaPipe** and kinematic extraction.")
     
     uploaded_csv = st.file_uploader("Upload Patient Coordinate Data (CSV)", type=["csv"])
@@ -248,42 +248,40 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
 # ============================================================================
 elif app_mode == "3. Live Webcam Analysis 🔴":
     st.markdown("### Real-Time Webcam Analysis")
-    st.markdown("Capture a frame from your camera and run pose analysis on it.")
+    st.warning("Make sure your terminal has permission to access the Mac Camera!")
 
-    img_file = st.camera_input("Capture frame for analysis")
+    start_cam = st.checkbox("Turn On Webcam")
+    FRAME_WINDOW = st.image([])
 
-    if img_file is not None:
-        from PIL import Image as _PIL_Image
-        import io as _io
-
-        img_pil = _PIL_Image.open(img_file)
-        frame_rgb = np.array(img_pil)
-        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-
+    if start_cam:
         exercise = get_exercise(selected_exercise)
+        pipeline = get_pose_pipeline()
+        camera = cv2.VideoCapture(0)
 
-        try:
-            pipeline = get_pose_pipeline()
-            landmarks = pipeline.extract_frame(frame_bgr)
+        while start_cam:
+            ret, frame = camera.read()
+            if not ret:
+                st.error("Cannot access webcam.")
+                break
 
-            if landmarks:
-                result = st.session_state.analyzer.analyze(landmarks, exercise)
-                frame_annotated = VideoRenderer.draw_clinical_overlay(
-                    frame_rgb, landmarks, result, selected_exercise
-                )
-                st.image(frame_annotated, caption="Pose analysis result")
-                col_a, col_b = st.columns(2)
-                col_a.metric("Status", result.status.value)
-                col_b.metric("Confidence", f"{result.confidence:.0%}")
-            else:
-                st.image(frame_rgb, caption="Captured frame")
-                st.warning("No pose detected — ensure your upper body is fully visible.")
+            frame = cv2.flip(frame, 1)  # mirror image
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        except Exception as e:
-            st.error(f"Analysis error: {str(e)}")
-            logger.error(f"Webcam processing failed: {e}", exc_info=True)
+            try:
+                landmarks = pipeline.extract_frame(frame)
+                if landmarks:
+                    result = st.session_state.analyzer.analyze(landmarks, exercise)
+                    frame_rgb = VideoRenderer.draw_clinical_overlay(
+                        frame_rgb, landmarks, result, selected_exercise
+                    )
+            except Exception as e:
+                logger.warning(f"Frame analysis error: {e}")
+
+            FRAME_WINDOW.image(frame_rgb)
+
+        camera.release()
     else:
-        st.info("Click the camera button above to capture a frame for analysis.")
+        st.info("Click the checkbox above to activate the camera.")
 
 # ============================================================================
 # MODE 4: ANALYTICS & SYSTEM VALIDATION
