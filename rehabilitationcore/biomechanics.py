@@ -123,17 +123,21 @@ def smooth_signal(values: List[float], method: str = "ema", span: int = 3) -> Li
     values = np.array(values)
     
     if method == "ema":
-        # Pandas-like EMA implementation
         alpha = 2 / (span + 1)
-        smoothed = np.zeros_like(values)
-        smoothed[0] = values[0]
-        
-        for i in range(1, len(values)):
+        smoothed = np.full_like(values, np.nan)
+
+        # Find first valid (non-NaN) value to seed the EMA
+        first_valid = next((i for i, v in enumerate(values) if not np.isnan(v)), None)
+        if first_valid is None:
+            return smoothed.tolist()
+
+        smoothed[first_valid] = values[first_valid]
+        for i in range(first_valid + 1, len(values)):
             if np.isnan(values[i]):
                 smoothed[i] = smoothed[i - 1]
             else:
                 smoothed[i] = alpha * values[i] + (1 - alpha) * smoothed[i - 1]
-        
+
         return smoothed.tolist()
     
     elif method == "sma":
