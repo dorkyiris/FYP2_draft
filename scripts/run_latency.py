@@ -5,7 +5,10 @@ Runs on 50 real frames from Exercise 1; first 5 dropped as warm-up.
 
 Install dependencies before running:
     pip install openmim
-    mim install mmengine mmcv mmdet mmpose
+    mim install mmengine
+    mim install "mmcv>=2.0.0"
+    mim install mmdet
+    mim install mmpose
 
 Usage:
     /opt/homebrew/bin/python3.10 scripts/run_latency.py

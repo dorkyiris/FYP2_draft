@@ -5,7 +5,10 @@ Saves results to /tmp/hrnet_results.json.
 
 Install dependencies before running:
     pip install openmim
-    mim install mmengine mmcv mmdet mmpose
+    mim install mmengine
+    mim install "mmcv>=2.0.0"
+    mim install mmdet
+    mim install mmpose
 
 Usage:
     /opt/homebrew/bin/python3.10 scripts/run_hrnet_all.py
