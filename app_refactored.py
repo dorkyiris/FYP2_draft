@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 st.set_page_config(
     page_title="Tele-Rehab Kinematic Dashboard",
-    page_icon="⚕️",
+    page_icon=None,
     layout="wide"
 )
 sns.set_theme(style="whitegrid", context="paper")
@@ -70,7 +70,7 @@ def get_pose_pipeline() -> PoseExtractionPipeline:
 # ============================================================================
 # SIDEBAR NAVIGATION
 # ============================================================================
-st.sidebar.markdown("## 🎓 Multimedia University")
+st.sidebar.markdown("## Multimedia University")
 st.sidebar.markdown("**FYP02-DS-T2610-P262**")
 st.sidebar.markdown("**Vision-based Movement Analysis of Rehabilitation Exercises**")
 st.sidebar.markdown("---")
@@ -78,7 +78,7 @@ st.sidebar.markdown("---")
 app_mode = st.sidebar.radio("Select Application Mode", [
     "1. Movement Data Analysis (CSV)",
     "2. Upload Video Analysis (MP4)",
-    "3. Live Webcam Analysis 🔴",
+    "3. Live Webcam Analysis",
     "4. Project Analytics & Stats"
 ])
 
@@ -188,7 +188,7 @@ if app_mode == "1. Movement Data Analysis (CSV)":
                     4: ("Hand Opening (thumb-wrist-pinky)", "Finger Spread"),
                 }
                 col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Result", "PASS ✅" if _achieved else "FAIL ❌")
+                col1.metric("Result", "PASS" if _achieved else "FAIL")
                 col2.metric("Peak Angle", f"{_peak_val:.1f}°", f"target {_thresh_str}")
                 col3.metric("Frames at Target", f"{_pass_frames}/{_total}", f"{_pass_pct:.1f}%")
                 col4.metric("Total Frames", _total)
@@ -243,7 +243,7 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
             tfile_in.write(uploaded_video.read())
             tfile_in.flush()
             
-            if st.button("▶️ Process Clinical Video"):
+            if st.button("Process Clinical Video"):
                 with st.spinner("Processing video frames..."):
                     exercise = get_exercise(selected_exercise)
                     
@@ -265,7 +265,7 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
                         os.remove(h264_path)
                     else:
                         st.video(open(tfile_in.name, 'rb').read())
-                        st.caption("⚠️ Could not transcode — video may not play in Chrome/Firefox (HEVC codec)")
+                        st.caption("Could not transcode — video may not play in Chrome/Firefox (HEVC codec)")
                     
                     # Show analysis results
                     pass_count  = sum(1 for r in results if r.status.value == "PASS")
@@ -279,18 +279,18 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
                     peak_rate = 100.0 * pass_count / total if total else 0
 
                     if exercise_achieved:
-                        st.success(f"✅ Exercise target angle **achieved** in {pass_count}/{total} frames ({peak_rate:.1f}%)")
+                        st.success(f"Exercise target angle achieved in {pass_count}/{total} frames ({peak_rate:.1f}%)")
                     else:
-                        st.error("❌ Target angle never reached — patient may need more range of motion")
+                        st.error("Target angle never reached — patient may need more range of motion")
 
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Frames at Target", f"{pass_count}", "PASS")
                     col2.metric("Frames Below Target", f"{fail_count}", "FAIL")
                     col3.metric("Tracking Lost", f"{track_count}", "frames")
-                    col4.metric("Target Reached?", "Yes ✅" if exercise_achieved else "No ❌")
+                    col4.metric("Target Reached?", "Yes" if exercise_achieved else "No")
 
                     st.caption(
-                        "ℹ️ *Frames at Target* = frames where joint angle met/exceeded the threshold. "
+                        "*Frames at Target* = frames where joint angle met/exceeded the threshold. "
                         "A complete exercise video naturally has resting frames (start/end) that score below threshold — "
                         "only the peak of the movement counts as PASS. Typical range: 25–50% for a well-performed repetition."
                     )
@@ -306,7 +306,7 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
 # ============================================================================
 # MODE 3: LIVE WEBCAM ANALYSIS
 # ============================================================================
-elif app_mode == "3. Live Webcam Analysis 🔴":
+elif app_mode == "3. Live Webcam Analysis":
     st.markdown("### Real-Time Webcam Analysis")
     st.warning("Make sure your terminal has permission to access the Mac Camera!")
 
@@ -624,7 +624,7 @@ elif app_mode == "4. Project Analytics & Stats":
 # GLOBAL FOOTER
 # ============================================================================
 st.markdown("---")
-st.markdown("### 🏆 System Accuracy Benchmarks (Nandana et al. 2026 dataset)")
+st.markdown("### System Accuracy Benchmarks — Nandana et al. (2026) Dataset")
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Ex 1 — Lifting an Object", "53.3%", "MediaPipe + EMA")
 col2.metric("Ex 2 — Extending the Elbow", "70.6%", "YOLOv8 (best)")
