@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Measure per-frame inference latency for MediaPipe, YOLOv8-Pose, and KeypointRCNN.
+Measure per-frame inference latency for MediaPipe, YOLOv8-Pose, and HRNet-W32.
 Runs on 50 real frames from Exercise 1; first 5 dropped as warm-up.
+
+Install dependencies before running:
+    pip install openmim
+    mim install mmengine mmcv mmdet mmpose
 
 Usage:
     /opt/homebrew/bin/python3.10 scripts/run_latency.py
@@ -60,20 +64,15 @@ def benchmark_yolo(frames: list) -> dict:
             "p95": round(np.percentile(times, 95), 1)}
 
 
-def benchmark_krcnn(frames: list) -> dict:
-    import torch
-    import torchvision
-    model = torchvision.models.detection.keypointrcnn_resnet50_fpn(
-        weights=torchvision.models.detection.KeypointRCNN_ResNet50_FPN_Weights.DEFAULT)
-    model.eval()
+def benchmark_hrnet(frames: list) -> dict:
+    from mmpose.apis import MMPoseInferencer
+    inferencer = MMPoseInferencer(pose2d="human")
     times = []
-    with torch.no_grad():
-        for f in frames:
-            rgb  = cv2.cvtColor(f, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-            t_in = torch.from_numpy(rgb.transpose(2, 0, 1)).unsqueeze(0)
-            t0   = time.perf_counter()
-            model(t_in)
-            times.append((time.perf_counter() - t0) * 1000)
+    for f in frames:
+        rgb = cv2.cvtColor(f, cv2.COLOR_BGR2RGB)
+        t0  = time.perf_counter()
+        next(inferencer(rgb, return_vis=False))
+        times.append((time.perf_counter() - t0) * 1000)
     times = times[WARMUP:]
     return {"mean": round(np.mean(times), 1), "std": round(np.std(times), 1),
             "p95": round(np.percentile(times, 95), 1)}
@@ -90,11 +89,11 @@ def main() -> None:
     yolo_r = benchmark_yolo(frames)
     print(f"  mean={yolo_r['mean']} ms  std={yolo_r['std']} ms  p95={yolo_r['p95']} ms")
 
-    print("KeypointRCNN …")
-    krcnn_r = benchmark_krcnn(frames)
-    print(f"  mean={krcnn_r['mean']} ms  std={krcnn_r['std']} ms  p95={krcnn_r['p95']} ms")
+    print("HRNet-W32 …")
+    hrnet_r = benchmark_hrnet(frames)
+    print(f"  mean={hrnet_r['mean']} ms  std={hrnet_r['std']} ms  p95={hrnet_r['p95']} ms")
 
-    result = {"MediaPipe": mp_r, "YOLOv8-Pose": yolo_r, "KeypointRCNN": krcnn_r}
+    result = {"MediaPipe": mp_r, "YOLOv8-Pose": yolo_r, "HRNet-W32": hrnet_r}
     json.dump(result, open("/tmp/latency_results.json", "w"))
     print("\nSaved /tmp/latency_results.json")
 
