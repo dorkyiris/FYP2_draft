@@ -1,12 +1,6 @@
-# Pose estimation (HRNet via mmpose)
-# mmcv/mmdet/mmpose MUST be installed via mim, NOT pip — mim fetches pre-built wheels.
-# Run once after pip install -r requirements.txt:
-#   pip install openmim
-#   mim install mmengine
-#   mim install "mmcv>=2.0.0"
-#   mim install mmdet
-#   mim install mmpose
-openmim
+# Pose estimation (RTMPose-m via rtmlib — no compilation required)
+rtmlib
+onnxruntime
 
 # Core API
 fastapi>=0.111,<1.0

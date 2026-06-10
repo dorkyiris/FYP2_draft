@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
 """
-Run HRNet-W32 (mmpose) on all 4 exercise test sets and classify using Angular DTW.
+Run RTMPose-m (rtmlib/ONNX) on all 4 exercise test sets and classify using Angular DTW.
+RTMPose-m is the OpenMMLab successor to HRNet; same COCO-17 keypoint format, no compilation needed.
 Saves results to /tmp/hrnet_results.json.
 
 Install dependencies before running:
-    pip install openmim
-    mim install mmengine
-    mim install "mmcv>=2.0.0"
-    mim install mmdet
-    mim install mmpose
+    pip install rtmlib onnxruntime
 
 Usage:
-    /opt/homebrew/bin/python3.10 scripts/run_hrnet_all.py
+    python scripts/run_hrnet_all.py
 """
 import glob, json, os
 import numpy as np
 import cv2
 from fastdtw import fastdtw
-from mmpose.apis import MMPoseInferencer
+from rtmlib import Body
 
 DATASET = os.path.join(os.path.dirname(__file__), "..",
                        "An_upper_limb_stroke_rehabilitation_exercise_video")
@@ -34,11 +31,11 @@ SCORE_THR   = 0.3    # minimum keypoint score for elbow landmarks
 SHOULDER_I, ELBOW_I, WRIST_I = 6, 8, 10
 
 
-def build_inferencer() -> MMPoseInferencer:
-    return MMPoseInferencer(pose2d="human")
+def build_model() -> Body:
+    return Body(pose='rtmpose-m', backend='onnxruntime', device='cpu')
 
 
-def extract_elbow_angles(video_path: str, inferencer: MMPoseInferencer) -> list[float]:
+def extract_elbow_angles(video_path: str, model: Body) -> list:
     cap = cv2.VideoCapture(video_path)
     angles, frame_idx = [], 0
     while True:
@@ -46,19 +43,15 @@ def extract_elbow_angles(video_path: str, inferencer: MMPoseInferencer) -> list[
         if not ret:
             break
         if frame_idx % SAMPLE == 0:
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = next(inferencer(rgb, return_vis=False))
-            preds = result.get("predictions", [[]])[0]
-            if preds:
-                person = preds[0]
-                kps    = np.array(person["keypoints"])          # (17, 2) pixel x,y
-                scores = np.array(person["keypoint_scores"])    # (17,)
-                # Skip frame if elbow keypoints are unreliable
-                if scores[ELBOW_I] < SCORE_THR or scores[WRIST_I] < SCORE_THR:
+            # rtmlib takes BGR directly
+            keypoints, scores = model(frame)   # (N,17,2), (N,17)
+            if keypoints.shape[0] > 0:
+                kps = keypoints[0]             # (17, 2) pixel x,y
+                sc  = scores[0]                # (17,)
+                if sc[ELBOW_I] < SCORE_THR or sc[WRIST_I] < SCORE_THR:
                     frame_idx += 1
                     continue
-                # Normalise to relative coords (matches MediaPipe convention)
-                kps = kps / FRAME_W
+                kps = kps / FRAME_W            # normalise to relative coords
                 a, b, c = kps[SHOULDER_I], kps[ELBOW_I], kps[WRIST_I]
                 ba, bc  = a - b, c - b
                 denom   = np.linalg.norm(ba) * np.linalg.norm(bc) + 1e-10
@@ -71,14 +64,14 @@ def extract_elbow_angles(video_path: str, inferencer: MMPoseInferencer) -> list[
     return angles
 
 
-def angular_dtw_classify(pat: list[float], exp: list[float], threshold: float) -> str:
+def angular_dtw_classify(pat: list, exp: list, threshold: float) -> str:
     if len(pat) < 5 or len(exp) < 5:
         return "incomplete"
     dist, path = fastdtw(pat, exp, dist=lambda x, y: abs(x - y))
     return "complete" if (dist / len(path)) <= threshold else "incomplete"
 
 
-def run_exercise(ex_folder: str, threshold: float, inferencer: MMPoseInferencer) -> dict:
+def run_exercise(ex_folder: str, threshold: float, model: Body) -> dict:
     ex_dir = os.path.join(DATASET, "Exercise", ex_folder)
     complete_vids   = sorted(v for v in glob.glob(os.path.join(ex_dir, "Complete",   "Test", "*.mp4"))
                              if "DASHBOARD" not in v)
@@ -89,18 +82,18 @@ def run_exercise(ex_folder: str, threshold: float, inferencer: MMPoseInferencer)
     print(f"Exercise: {ex_folder}")
     print(f"  Test set: {len(complete_vids)} complete, {len(incomplete_vids)} incomplete")
 
-    expert_path   = complete_vids[0]
-    patient_vids  = [(v, "complete") for v in complete_vids[1:]] + \
-                    [(v, "incomplete") for v in incomplete_vids]
+    expert_path  = complete_vids[0]
+    patient_vids = [(v, "complete") for v in complete_vids[1:]] + \
+                   [(v, "incomplete") for v in incomplete_vids]
 
     print(f"  Expert : {os.path.basename(expert_path)}")
     print("  Extracting expert angles …")
-    expert_angles = extract_elbow_angles(expert_path, inferencer)
+    expert_angles = extract_elbow_angles(expert_path, model)
     print(f"  Expert angle frames: {len(expert_angles)}")
 
     correct = total = 0
     for i, (vid_path, true_label) in enumerate(patient_vids, 1):
-        angles = extract_elbow_angles(vid_path, inferencer)
+        angles = extract_elbow_angles(vid_path, model)
         pred   = angular_dtw_classify(angles, expert_angles, threshold)
         correct += pred == true_label
         total   += 1
@@ -109,22 +102,21 @@ def run_exercise(ex_folder: str, threshold: float, inferencer: MMPoseInferencer)
               f"true={true_label:<10s}  pred={pred}")
 
     acc = round(correct / total * 100, 1) if total else 0.0
-    print(f"  HRNet-W32  accuracy: {correct}/{total} = {acc}%")
+    print(f"  RTMPose-m  accuracy: {correct}/{total} = {acc}%")
     return {"correct": correct, "total": total, "accuracy": acc}
 
 
 def main() -> None:
-    print("Loading HRNet-W32 via MMPoseInferencer …")
-    inferencer = build_inferencer()
+    print("Loading RTMPose-m via rtmlib …")
+    model = build_model()
 
     results = {}
     for idx, (ex_folder, threshold) in enumerate(EXERCISES, 1):
-        key = f"ex{idx}"
-        results[key] = run_exercise(ex_folder, threshold, inferencer)
+        results[f"ex{idx}"] = run_exercise(ex_folder, threshold, model)
 
     print("\n" + "="*60)
-    print("HRNet-W32 Summary")
-    for idx, (ex_folder, _) in enumerate(EXERCISES, 1):
+    print("RTMPose-m Summary")
+    for idx in range(1, 5):
         r = results[f"ex{idx}"]
         print(f"  Ex{idx}: {r['correct']}/{r['total']} = {r['accuracy']}%")
 

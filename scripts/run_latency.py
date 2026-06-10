@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 """
-Measure per-frame inference latency for MediaPipe, YOLOv8-Pose, and HRNet-W32.
+Measure per-frame inference latency for MediaPipe, YOLOv8-Pose, and RTMPose-m.
 Runs on 50 real frames from Exercise 1; first 5 dropped as warm-up.
 
 Install dependencies before running:
-    pip install openmim
-    mim install mmengine
-    mim install "mmcv>=2.0.0"
-    mim install mmdet
-    mim install mmpose
+    pip install rtmlib onnxruntime
 
 Usage:
-    /opt/homebrew/bin/python3.10 scripts/run_latency.py
+    python scripts/run_latency.py
 """
 import glob, json, os, time
 import numpy as np
@@ -67,14 +63,13 @@ def benchmark_yolo(frames: list) -> dict:
             "p95": round(np.percentile(times, 95), 1)}
 
 
-def benchmark_hrnet(frames: list) -> dict:
-    from mmpose.apis import MMPoseInferencer
-    inferencer = MMPoseInferencer(pose2d="human")
+def benchmark_rtmpose(frames: list) -> dict:
+    from rtmlib import Body
+    model = Body(pose='rtmpose-m', backend='onnxruntime', device='cpu')
     times = []
     for f in frames:
-        rgb = cv2.cvtColor(f, cv2.COLOR_BGR2RGB)
-        t0  = time.perf_counter()
-        next(inferencer(rgb, return_vis=False))
+        t0 = time.perf_counter()
+        model(f)
         times.append((time.perf_counter() - t0) * 1000)
     times = times[WARMUP:]
     return {"mean": round(np.mean(times), 1), "std": round(np.std(times), 1),
@@ -92,11 +87,11 @@ def main() -> None:
     yolo_r = benchmark_yolo(frames)
     print(f"  mean={yolo_r['mean']} ms  std={yolo_r['std']} ms  p95={yolo_r['p95']} ms")
 
-    print("HRNet-W32 …")
-    hrnet_r = benchmark_hrnet(frames)
-    print(f"  mean={hrnet_r['mean']} ms  std={hrnet_r['std']} ms  p95={hrnet_r['p95']} ms")
+    print("RTMPose-m …")
+    rtm_r = benchmark_rtmpose(frames)
+    print(f"  mean={rtm_r['mean']} ms  std={rtm_r['std']} ms  p95={rtm_r['p95']} ms")
 
-    result = {"MediaPipe": mp_r, "YOLOv8-Pose": yolo_r, "HRNet-W32": hrnet_r}
+    result = {"MediaPipe": mp_r, "YOLOv8-Pose": yolo_r, "RTMPose-m": rtm_r}
     json.dump(result, open("/tmp/latency_results.json", "w"))
     print("\nSaved /tmp/latency_results.json")
 
