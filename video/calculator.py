@@ -71,34 +71,44 @@ class KinematicCalculator:
         
         Args:
             df: DataFrame with landmark coordinates
-            exercise_num: Exercise ID (1, 2, or 3)
+            exercise_num: Exercise ID (1, 2, 3, or 4)
             smoothing_method: Smoothing algorithm
             smoothing_span: Smoothing window size
-        
+
         Returns:
-            DataFrame with additional Shoulder_Angle and Elbow_Angle columns
+            DataFrame with additional Shoulder_Angle and Elbow_Angle columns.
+            Angle semantics vary by exercise — see inline comments.
         """
         from rehabilitationcore.biomechanics import calculate_2d_angle
-        
-        # Landmark indices (right side)
-        r_shoulder, r_elbow, r_wrist, r_hip = 12, 14, 16, 24
-        
+
         angles_df = df.copy()
         shoulder_angles, elbow_angles = [], []
-        
+
         for index, row in angles_df.iterrows():
+            def lm(idx):
+                return [row[f'Lm{idx}_x'], row[f'Lm{idx}_y']]
+
             try:
-                hip = [row[f'Lm{r_hip}_x'], row[f'Lm{r_hip}_y']]
-                shoulder = [row[f'Lm{r_shoulder}_x'], row[f'Lm{r_shoulder}_y']]
-                elbow = [row[f'Lm{r_elbow}_x'], row[f'Lm{r_elbow}_y']]
-                wrist = [row[f'Lm{r_wrist}_x'], row[f'Lm{r_wrist}_y']]
-                
-                shoulder_angle = calculate_2d_angle(hip, shoulder, elbow)
-                elbow_angle = calculate_2d_angle(shoulder, elbow, wrist)
-                
-                shoulder_angles.append(shoulder_angle)
-                elbow_angles.append(elbow_angle)
-            
+                if exercise_num in (1, 2):
+                    # Ex1: shoulder flexion (hip-shoulder-elbow); Ex2: elbow extension (shoulder-elbow-wrist)
+                    sa = calculate_2d_angle(lm(24), lm(12), lm(14))  # hip-shoulder-elbow
+                    ea = calculate_2d_angle(lm(12), lm(14), lm(16))  # shoulder-elbow-wrist
+                elif exercise_num == 3:
+                    # Wrist extension: angle at wrist (elbow-wrist-pinky)
+                    # Shoulder_Angle = primary (wrist extension); Elbow_Angle = constraint (elbow)
+                    sa = calculate_2d_angle(lm(14), lm(16), lm(18))  # elbow-wrist-pinky
+                    ea = calculate_2d_angle(lm(12), lm(14), lm(16))  # shoulder-elbow-wrist
+                elif exercise_num == 4:
+                    # Hand opening: spread angle at wrist (thumb-wrist-pinky)
+                    # Shoulder_Angle = primary (hand spread); Elbow_Angle = finger spread (wrist-pinky-index)
+                    sa = calculate_2d_angle(lm(22), lm(16), lm(18))  # thumb-wrist-pinky
+                    ea = calculate_2d_angle(lm(16), lm(18), lm(20))  # wrist-pinky-index
+                else:
+                    sa, ea = np.nan, np.nan
+
+                shoulder_angles.append(sa)
+                elbow_angles.append(ea)
+
             except (KeyError, ValueError) as e:
                 logger.debug(f"Cannot calculate angles for frame {index}: {e}")
                 shoulder_angles.append(np.nan)

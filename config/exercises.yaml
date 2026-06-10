@@ -28,9 +28,9 @@ exercises:
   3:
     name: "Lifting the wrist"
     description: "Wrist extension/flexion tracking"
-    landmarks: [14, 16, 18, 20]  # Elbow, Wrist, Pinky, Index
+    landmarks: [14, 16, 18, 20]  # Elbow(→shoulder slot), Wrist(→elbow slot), Pinky(→wrist slot), Index(→hip slot)
     thresholds:
-      wrist:
+      elbow:  # computed as angle at wrist: elbow-wrist-pinky = wrist extension angle
         type: "minimum"
         value: 15.0
         feedback_pass: "✅ Wrist Lift: PASS"
@@ -39,9 +39,9 @@ exercises:
   4:
     name: "Opening the hand"
     description: "Finger extension and hand opening"
-    landmarks: [16, 18, 20, 22]  # Wrist, Pinky, Index, Thumb
+    landmarks: [16, 18, 20, 22]  # Wrist(→shoulder slot), Pinky(→elbow slot), Index(→wrist slot), Thumb(→hip slot)
     thresholds:
-      hand_open:
+      shoulder:  # computed as angle at wrist: thumb-wrist-pinky = hand opening spread
         type: "minimum"
         value: 45.0
         feedback_pass: "✅ Hand Open: PASS"

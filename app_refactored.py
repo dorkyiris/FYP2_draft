@@ -78,7 +78,7 @@ app_mode = st.sidebar.radio("Select Application Mode", [
 st.sidebar.markdown("---")
 selected_exercise = st.sidebar.selectbox(
     "Select Clinical Exercise",
-    [1, 2, 3],
+    [1, 2, 3, 4],
     format_func=lambda x: f"Exercise {x}: {get_exercise(x).name}"
 )
 
@@ -117,9 +117,10 @@ if app_mode == "1. Static Data Analysis (CSV)":
                 
                 # Prepare visualization titles
                 titles = {
-                    1: ('Right Shoulder Abduction', 'Right Elbow Flexion (Constraint)', 90, 160),
-                    2: ('Arm "V" to "W" Transition', 'Elbow Tracking', 120, 90),
-                    3: ('Inclined Push-up Alignment', 'Elbow Flexion (Depth)', 150, 100)
+                    1: ('Shoulder Flexion (Lifting)', 'Elbow Angle (Constraint)', 90, 160),
+                    2: ('Shoulder Position', 'Elbow Extension', 90, 160),
+                    3: ('Wrist Extension Angle', 'Elbow Angle (Constraint)', 15, 160),
+                    4: ('Hand Opening Angle', 'Finger Spread', 45, 60),
                 }
                 
                 title_1, title_2, target_line_1, fail_line_2 = titles[selected_exercise]
