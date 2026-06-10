@@ -19,7 +19,14 @@ import cv2
 import tempfile
 import os
 import logging
+import importlib
 from typing import Optional, List
+
+# Force-reload core modules so Streamlit's sys.modules cache never serves stale code
+import rehabilitationcore.biomechanics
+import video.calculator
+importlib.reload(rehabilitationcore.biomechanics)
+importlib.reload(video.calculator)
 
 # Import refactored modules
 from rehabilitationcore import (

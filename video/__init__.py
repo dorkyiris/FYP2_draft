@@ -42,6 +42,33 @@ class PoseExtractionPipeline:
     
     def __enter__(self):
         """Context manager entry — loads MediaPipe here to keep import-time clean."""
+        import sys, types
+
+        # mediapipe 0.10.x optionally imports tensorflow for doc decorators only.
+        # On macOS base Python 3.12, TF has a binary/protobuf conflict that breaks
+        # the import chain.  Pre-populate sys.modules with a minimal stub so mediapipe
+        # loads cleanly regardless of whether TF is installed or broken.
+        try:
+            from tensorflow.tools.docs import doc_controls as _dc
+            _dc.do_not_generate_docs  # verify attribute exists
+        except Exception:
+            _noop = lambda fn: fn
+            _dc_mod = types.ModuleType("tensorflow.tools.docs.doc_controls")
+            _dc_mod.do_not_generate_docs = _noop
+            _tf_docs = types.ModuleType("tensorflow.tools.docs")
+            _tf_docs.doc_controls = _dc_mod
+            _tf_tools = types.ModuleType("tensorflow.tools")
+            _tf_tools.docs = _tf_docs
+            _tf = types.ModuleType("tensorflow")
+            _tf.tools = _tf_tools
+            for _k, _v in [
+                ("tensorflow", _tf),
+                ("tensorflow.tools", _tf_tools),
+                ("tensorflow.tools.docs", _tf_docs),
+                ("tensorflow.tools.docs.doc_controls", _dc_mod),
+            ]:
+                sys.modules.setdefault(_k, _v)
+
         import mediapipe as mp
         mp_pose = mp.solutions.pose
         self.pose = mp_pose.Pose(
