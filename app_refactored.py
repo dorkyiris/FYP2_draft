@@ -71,8 +71,8 @@ def get_pose_pipeline() -> PoseExtractionPipeline:
 # SIDEBAR NAVIGATION
 # ============================================================================
 st.sidebar.markdown("## 🎓 Multimedia University")
-st.sidebar.markdown("**FYP 2: Tele-Rehabilitation System**")
-st.sidebar.markdown("**Phase 1–7 Complete**")
+st.sidebar.markdown("**FYP02-DS-T2610-P262**")
+st.sidebar.markdown("**Vision-based Movement Analysis of Rehabilitation Exercises**")
 st.sidebar.markdown("---")
 
 app_mode = st.sidebar.radio("Select Application Mode", [
@@ -294,7 +294,7 @@ elif app_mode == "3. Live Webcam Analysis 🔴":
 # MODE 4: ANALYTICS & SYSTEM VALIDATION
 # ============================================================================
 elif app_mode == "4. Project Analytics & Stats":
-    st.markdown("### FYP 2 System Validation")
+    st.markdown("### System Validation")
     
     tab1, tab2 = st.tabs(["Environmental Robustness", "Ablation Study"])
     
@@ -524,8 +524,4 @@ col2.metric("Ex 2 — Extending the Elbow", "70.6%", "YOLOv8 (best)")
 col3.metric("Ex 3 — Lifting the Wrist", "55.8%", "MediaPipe Raw")
 col4.metric("Ex 4 — Opening the Hand", "60.5%", "YOLOv8")
 
-st.markdown("""
----
-**Phases 1–7 Complete** ✅
-Biomechanical engine · YAML config · Error handling · Documentation · 167 tests · REST API · Docker + CI/CD
-""")
+st.markdown("---")
