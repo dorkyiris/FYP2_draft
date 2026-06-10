@@ -137,68 +137,91 @@ if app_mode == "1. Movement Data Analysis (CSV)":
             if len(plot_df) == 0:
                 st.error("No valid angle data extracted from CSV.")
             else:
-                st.success(f"✅ Data Processed Successfully! ({len(plot_df)} frames)")
-                
-                # Get exercise definition for titles
                 exercise = get_exercise(selected_exercise)
-                
-                # Prepare visualization titles
-                titles = {
-                    1: ('Shoulder Flexion (Lifting)', 'Elbow Angle (Constraint)', 90, 160),
-                    2: ('Shoulder Position', 'Elbow Extension', 90, 160),
-                    3: ('Wrist Extension Angle', 'Elbow Angle (Constraint)', 15, 160),
-                    4: ('Hand Opening Angle', 'Finger Spread', 45, 60),
+
+                # Which DataFrame column holds the primary (classified) angle per exercise:
+                # Ex1 primary = shoulder flexion  → Shoulder_Angle
+                # Ex2 primary = elbow extension   → Elbow_Angle
+                # Ex3 primary = wrist dorsiflexion → Shoulder_Angle (elbow-wrist-pinky stored there)
+                # Ex4 primary = hand opening       → Shoulder_Angle (thumb-wrist-pinky stored there)
+                _primary_col = {1: "Shoulder_Angle", 2: "Elbow_Angle",
+                                 3: "Shoulder_Angle", 4: "Shoulder_Angle"}[selected_exercise]
+                _thresh = exercise.angle_thresholds[exercise.primary_angles[0]]
+
+                _series      = plot_df[_primary_col].dropna()
+                _uses_max    = _thresh.max_value is not None
+                _threshold_v = _thresh.max_value if _uses_max else _thresh.min_value
+                _peak_val    = _series.min() if _uses_max else _series.max()
+
+                def _frame_pass(v):
+                    if _thresh.min_value is not None and v < _thresh.min_value:
+                        return False
+                    if _thresh.max_value is not None and v > _thresh.max_value:
+                        return False
+                    return True
+
+                _pass_frames = int(_series.apply(_frame_pass).sum())
+                _total       = len(_series)
+                _pass_pct    = 100.0 * _pass_frames / _total if _total else 0
+                _achieved    = _frame_pass(_peak_val)
+
+                # ── Verdict banner ──────────────────────────────────────────
+                _thresh_str = f"≤ {_threshold_v:.0f}°" if _uses_max else f"≥ {_threshold_v:.0f}°"
+                if _achieved:
+                    st.success(
+                        f"PASS — Target reached  |  Peak: {_peak_val:.1f}°  |  "
+                        f"Threshold: {_thresh_str}  |  "
+                        f"{_pass_frames}/{_total} frames at target ({_pass_pct:.1f}%)"
+                    )
+                else:
+                    st.error(
+                        f"FAIL — Target not reached  |  Peak: {_peak_val:.1f}°  |  "
+                        f"Need {_thresh_str}  |  "
+                        f"{_pass_frames}/{_total} frames at target ({_pass_pct:.1f}%)"
+                    )
+
+                # ── Metric cards ────────────────────────────────────────────
+                _titles = {
+                    1: ("Shoulder Flexion", "Elbow Angle"),
+                    2: ("Shoulder Position", "Elbow Extension"),
+                    3: ("Wrist Extension (elbow-wrist-pinky)", "Elbow Angle"),
+                    4: ("Hand Opening (thumb-wrist-pinky)", "Finger Spread"),
                 }
-                
-                title_1, title_2, target_line_1, fail_line_2 = titles[selected_exercise]
-                
-                # Create plots
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Result", "PASS ✅" if _achieved else "FAIL ❌")
+                col2.metric("Peak Angle", f"{_peak_val:.1f}°", f"target {_thresh_str}")
+                col3.metric("Frames at Target", f"{_pass_frames}/{_total}", f"{_pass_pct:.1f}%")
+                col4.metric("Total Frames", _total)
+
+                # ── Angle plots ─────────────────────────────────────────────
+                _t1, _t2 = _titles[selected_exercise]
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-                
-                sns.lineplot(
-                    data=plot_df,
-                    x=plot_df.index,
-                    y='Shoulder_Angle',
-                    ax=ax1,
-                    color='#2b7bba',
-                    linewidth=2.5
-                )
-                ax1.set_title(title_1, fontsize=12, fontweight='bold')
-                ax1.axhline(y=target_line_1, color='red', linestyle='--', alpha=0.5, label=f'Target: {target_line_1}°')
+
+                sns.lineplot(data=plot_df, x=plot_df.index, y='Shoulder_Angle',
+                             ax=ax1, color='#2b7bba', linewidth=2.5)
+                ax1.set_title(_t1, fontsize=12, fontweight='bold')
                 ax1.set_ylabel('Angle (degrees)')
+                # Reference line: primary angle threshold on whichever subplot shows the primary col
+                if _primary_col == "Shoulder_Angle":
+                    _lc = 'green' if _achieved else 'red'
+                    ax1.axhline(y=_threshold_v, color=_lc, linestyle='--', alpha=0.7,
+                                label=f'Target: {_thresh_str}')
                 ax1.legend()
-                
-                sns.lineplot(
-                    data=plot_df,
-                    x=plot_df.index,
-                    y='Elbow_Angle',
-                    ax=ax2,
-                    color='#5cb85c',
-                    linewidth=2.5
-                )
-                ax2.set_title(title_2, fontsize=12, fontweight='bold')
+
+                sns.lineplot(data=plot_df, x=plot_df.index, y='Elbow_Angle',
+                             ax=ax2, color='#5cb85c', linewidth=2.5)
+                ax2.set_title(_t2, fontsize=12, fontweight='bold')
                 ax2.set_ylim(0, 200)
-                ax2.axhline(
-                    y=fail_line_2,
-                    color='orange',
-                    linestyle='--',
-                    alpha=0.7,
-                    label=f'Target Threshold: {fail_line_2}°'
-                )
                 ax2.set_ylabel('Angle (degrees)')
                 ax2.set_xlabel('Frame Number')
+                if _primary_col == "Elbow_Angle":
+                    _lc = 'green' if _achieved else 'red'
+                    ax2.axhline(y=_threshold_v, color=_lc, linestyle='--', alpha=0.7,
+                                label=f'Target: {_thresh_str}')
                 ax2.legend()
-                
+
                 st.pyplot(fig)
-                
-                # Show statistics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Shoulder Angle Mean", f"{plot_df['Shoulder_Angle'].mean():.1f}°")
-                with col2:
-                    st.metric("Elbow Angle Mean", f"{plot_df['Elbow_Angle'].mean():.1f}°")
-                with col3:
-                    st.metric("Total Frames Analyzed", len(plot_df))
+                plt.close(fig)
         
         except Exception as e:
             st.error(f"Error processing CSV: {str(e)}")
