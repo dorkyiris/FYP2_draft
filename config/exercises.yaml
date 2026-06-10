@@ -11,8 +11,8 @@ exercises:
       shoulder:
         type: "minimum"
         value: 90.0
-        feedback_pass: "✅ Lift Height: PASS"
-        feedback_fail: "❌ FAIL: Lift Higher!"
+        feedback_pass: "PASS: Lift Height OK"
+        feedback_fail: "FAIL: Lift Higher!"
 
   2:
     name: "Extending the elbow"
@@ -22,19 +22,19 @@ exercises:
       elbow:
         type: "minimum"
         value: 160.0
-        feedback_pass: "✅ Extension: PASS (Arm Straight)"
-        feedback_fail: "❌ FAIL: Keep Arm Straight!"
+        feedback_pass: "PASS: Arm Straight"
+        feedback_fail: "FAIL: Straighten Arm!"
 
   3:
     name: "Lifting the wrist"
-    description: "Wrist extension/flexion tracking"
-    landmarks: [14, 16, 18, 20]  # Elbow(→shoulder slot), Wrist(→elbow slot), Pinky(→wrist slot), Index(→hip slot)
+    description: "Wrist dorsiflexion tracking"
+    landmarks: [14, 16, 18, 20]  # Elbow(->shoulder slot), Wrist(->elbow slot), Pinky(->wrist slot), Index(->hip slot)
     thresholds:
-      elbow:  # computed as angle at wrist: elbow-wrist-pinky = wrist extension angle
-        type: "minimum"
-        value: 15.0
-        feedback_pass: "✅ Wrist Lift: PASS"
-        feedback_fail: "❌ FAIL: Lift Wrist More"
+      elbow:  # angle at wrist (elbow-wrist-pinky): ~170-180 when flat, decreases when wrist is lifted
+        type: "maximum"
+        value: 165.0
+        feedback_pass: "PASS: Wrist Lifted"
+        feedback_fail: "FAIL: Lift Wrist More"
 
   4:
     name: "Opening the hand"
@@ -44,5 +44,5 @@ exercises:
       shoulder:  # computed as angle at wrist: thumb-wrist-pinky = hand opening spread
         type: "minimum"
         value: 45.0
-        feedback_pass: "✅ Hand Open: PASS"
-        feedback_fail: "❌ FAIL: Open Hand Wider!"
+        feedback_pass: "PASS: Hand Open"
+        feedback_fail: "FAIL: Open Hand Wider!"

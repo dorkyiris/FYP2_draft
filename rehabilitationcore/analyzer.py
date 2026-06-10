@@ -76,7 +76,7 @@ class ExerciseAnalyzer:
                 exercise_name=exercise.name,
                 status=ExerciseStatus.TRACKING,
                 primary_angle=0.0,
-                feedback=f"🔍 Tracking... {error_msg}",
+                feedback=f"Tracking... {error_msg}",
                 confidence=0.0,
                 frame_number=frame_number,
             )
@@ -96,7 +96,7 @@ class ExerciseAnalyzer:
                 exercise_name=exercise.name,
                 status=ExerciseStatus.TRACKING,
                 primary_angle=0.0,
-                feedback="🔍 Insufficient landmark visibility",
+                feedback="Tracking... insufficient landmark visibility",
                 confidence=0.0,
                 frame_number=frame_number,
             )
@@ -113,7 +113,7 @@ class ExerciseAnalyzer:
                 exercise_name=exercise.name,
                 status=ExerciseStatus.TRACKING,
                 primary_angle=0.0,
-                feedback=f"🔍 Cannot calculate {primary_angle_name} angle",
+                feedback=f"Tracking... cannot calculate {primary_angle_name} angle",
                 confidence=0.0,
                 frame_number=frame_number,
             )
