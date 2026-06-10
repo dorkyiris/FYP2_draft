@@ -81,6 +81,15 @@ class KinematicCalculator:
         """
         from rehabilitationcore.biomechanics import calculate_2d_angle
 
+        # Normalize column names: Nandana 2026 CSVs use lowercase lm{n}_x;
+        # pipeline-generated CSVs use Lm{n}_x. Unify to Lm{n}_x.
+        rename = {
+            col: 'Lm' + col[2:]
+            for col in df.columns
+            if len(col) > 2 and col[:2] == 'lm' and col[2].isdigit()
+        }
+        df = df.rename(columns=rename) if rename else df
+
         angles_df = df.copy()
         shoulder_angles, elbow_angles = [], []
 

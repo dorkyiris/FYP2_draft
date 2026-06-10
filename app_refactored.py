@@ -187,6 +187,26 @@ if app_mode == "1. Movement Data Analysis (CSV)":
 # ============================================================================
 # MODE 2: UPLOADED VIDEO PROCESSING
 # ============================================================================
+def _transcode_h264(src_path: str) -> Optional[str]:
+    """Re-encode to browser-compatible H.264 MP4. Needed for HEVC source videos."""
+    cap = cv2.VideoCapture(src_path)
+    if not cap.isOpened():
+        return None
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    w   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out = tempfile.NamedTemporaryFile(delete=False, suffix='_h264.mp4').name
+    writer = cv2.VideoWriter(out, cv2.VideoWriter_fourcc(*'avc1'), fps, (w, h))
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        writer.write(frame)
+    cap.release()
+    writer.release()
+    return out if os.path.exists(out) and os.path.getsize(out) > 1000 else None
+
+
 elif app_mode == "2. Upload Video Analysis (MP4)":
     st.markdown("### Video Analysis")
     st.markdown("Upload rehabilitation exercise video for real-time analysis.")
@@ -214,37 +234,47 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
                         exercise
                     )
                     
-                    # Create output video with annotations
-                    output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-                    
-                    def frame_processor(frame):
-                        # This would need frame-by-frame result matching
-                        # For now, just return frame (full implementation in next phase)
-                        return frame
-                    
-                    # Use original video since frame-result matching needs implementation
-                    st.video(open(tfile_in.name, 'rb').read())
+                    # Transcode HEVC → H.264 so the browser can play it
+                    with st.spinner("Transcoding video for browser playback…"):
+                        h264_path = _transcode_h264(tfile_in.name)
+                    if h264_path:
+                        st.video(open(h264_path, 'rb').read())
+                        os.remove(h264_path)
+                    else:
+                        st.video(open(tfile_in.name, 'rb').read())
+                        st.caption("⚠️ Could not transcode — video may not play in Chrome/Firefox (HEVC codec)")
                     
                     # Show analysis results
-                    st.success("✅ Video Analyzed!")
-                    
-                    # Summary statistics
-                    pass_count = sum(1 for r in results if r.status.value == "PASS")
-                    fail_count = sum(1 for r in results if r.status.value == "FAIL")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("PASS Frames", pass_count)
-                    with col2:
-                        st.metric("FAIL Frames", fail_count)
-                    with col3:
-                        pass_rate = 100.0 * pass_count / len(results) if results else 0
-                        st.metric("Pass Rate", f"{pass_rate:.1f}%")
+                    pass_count  = sum(1 for r in results if r.status.value == "PASS")
+                    fail_count  = sum(1 for r in results if r.status.value == "FAIL")
+                    track_count = sum(1 for r in results if r.status.value == "TRACKING")
+                    total       = len(results)
+
+                    # "Exercise achieved" = did the angle ever reach PASS at least once?
+                    exercise_achieved = pass_count > 0
+                    # Peak fraction: what fraction of frames were at/past target angle
+                    peak_rate = 100.0 * pass_count / total if total else 0
+
+                    if exercise_achieved:
+                        st.success(f"✅ Exercise target angle **achieved** in {pass_count}/{total} frames ({peak_rate:.1f}%)")
+                    else:
+                        st.error("❌ Target angle never reached — patient may need more range of motion")
+
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Frames at Target", f"{pass_count}", "PASS")
+                    col2.metric("Frames Below Target", f"{fail_count}", "FAIL")
+                    col3.metric("Tracking Lost", f"{track_count}", "frames")
+                    col4.metric("Target Reached?", "Yes ✅" if exercise_achieved else "No ❌")
+
+                    st.caption(
+                        "ℹ️ *Frames at Target* = frames where joint angle met/exceeded the threshold. "
+                        "A complete exercise video naturally has resting frames (start/end) that score below threshold — "
+                        "only the peak of the movement counts as PASS. Typical range: 25–50% for a well-performed repetition."
+                    )
                 
                 # Cleanup
-                os.remove(tfile_in.name)
-                if os.path.exists(output_path):
-                    os.remove(output_path)
+                if os.path.exists(tfile_in.name):
+                    os.remove(tfile_in.name)
         
         except Exception as e:
             st.error(f"Video processing error: {str(e)}")
