@@ -163,6 +163,14 @@ def load_exercise(root_dir, exercise, angle_fn):
 
 # ── RF classifier ──────────────────────────────────────────────────────────────
 
+OOB_CHECKPOINTS = [10, 25, 50, 100, 150, 200, 300, 500]
+
+JOINTS = ["L_Elbow", "R_Elbow", "L_Shoulder", "R_Shoulder"]
+FSTATS = ["Mean", "Std", "Min", "Max", "Q25", "Q75", "Vel_Mean", "Vel_Std"]
+# Feature order matches build_features(): 6 stats × 4 joints then 2 vel × 4 joints
+FEAT_NAMES = [f"{s}_{j}" for s in FSTATS for j in JOINTS]
+
+
 def build_rf():
     return Pipeline([
         ("scaler", StandardScaler()),
@@ -170,6 +178,23 @@ def build_rf():
                                        min_samples_leaf=2, class_weight="balanced",
                                        random_state=42, n_jobs=-1)),
     ])
+
+
+def compute_oob_curve(X_train, y_train):
+    """Return (checkpoints, oob_errors) using warm_start staged training."""
+    scaler = StandardScaler()
+    X_sc   = scaler.fit_transform(X_train)
+    rf     = RandomForestClassifier(
+        n_estimators=OOB_CHECKPOINTS[0], oob_score=True,
+        max_features="sqrt", min_samples_leaf=2,
+        class_weight="balanced", random_state=42, n_jobs=-1, warm_start=True,
+    )
+    errors = []
+    for n in OOB_CHECKPOINTS:
+        rf.set_params(n_estimators=n)
+        rf.fit(X_sc, y_train)
+        errors.append(1.0 - rf.oob_score_)
+    return OOB_CHECKPOINTS, errors
 
 # ── DTW nearest-centroid ───────────────────────────────────────────────────────
 
@@ -222,7 +247,10 @@ def plot_cm(y_true, y_pred, title, save_path):
 
 def run_evaluation():
     all_metrics   = []
-    dtw_dist_data = []   # for violin plot
+    dtw_dist_data = []
+    oob_data      = []   # {detector, exercise, n_trees, oob_error}
+    train_acc_data= []   # {detector, exercise, train_acc, test_acc}
+    feat_imp_data = []   # {detector, exercise, feat_name, importance}
 
     for det, root, angle_fn in [
         ("YOLO",      YOLO_DIR, compute_yolo_angles),
@@ -253,13 +281,15 @@ def run_evaluation():
             # ── RF ─────────────────────────────────────────────────────────────
             rf = build_rf()
             rf.fit(X_train, y_train)
-            y_rf = rf.predict(X_test)
+            y_rf       = rf.predict(X_test)
+            y_rf_train = rf.predict(X_train)
 
             cm_title = f"{det} — {exercise} — Random Forest"
             cm_file  = CM_DIR / f"{det}_{exercise.replace(' ','_')}_RF.png"
             plot_cm(y_test, y_rf, cm_title, cm_file)
 
-            rf_acc  = accuracy_score(y_test, y_rf)
+            rf_acc       = accuracy_score(y_test,  y_rf)
+            rf_train_acc = accuracy_score(y_train, y_rf_train)
             rf_prec = precision_score(y_test, y_rf, zero_division=0)
             rf_rec  = recall_score(y_test, y_rf, zero_division=0)
             rf_f1   = f1_score(y_test, y_rf, zero_division=0)
@@ -274,6 +304,28 @@ def run_evaluation():
                 "F1":          round(rf_f1,   4),
                 "Mean Angular DTW (°)": "N/A",
             })
+
+            # Train vs test accuracy
+            train_acc_data.append({
+                "Detector": det, "Exercise": EX_SHORT[exercise],
+                "Train Acc": rf_train_acc, "Test Acc": rf_acc,
+            })
+
+            # OOB error curve
+            _, oob_errors = compute_oob_curve(X_train, y_train)
+            for n, err in zip(OOB_CHECKPOINTS, oob_errors):
+                oob_data.append({
+                    "Detector": det, "Exercise": EX_SHORT[exercise],
+                    "n_trees": n, "OOB Error": err,
+                })
+
+            # Feature importances
+            imps = rf.named_steps["clf"].feature_importances_
+            for fname, imp in zip(FEAT_NAMES, imps):
+                feat_imp_data.append({
+                    "Detector": det, "Exercise": EX_SHORT[exercise],
+                    "Feature": fname, "Importance": imp,
+                })
 
             # ── Angular DTW ────────────────────────────────────────────────────
             y_dtw, dist_info = dtw_predict(test_rec, train_c, train_i)
@@ -314,7 +366,7 @@ def run_evaluation():
             print(f"    DTW — Acc:{dtw_acc:.2%}  P:{dtw_prec:.2%}  R:{dtw_rec:.2%}  "
                   f"F1:{dtw_f1:.2%}  DTW:{mean_dtw:.3f}°")
 
-    return all_metrics, dtw_dist_data
+    return all_metrics, dtw_dist_data, oob_data, train_acc_data, feat_imp_data
 
 # ── Metrics table ──────────────────────────────────────────────────────────────
 
@@ -521,6 +573,217 @@ def plot_dtw_distribution(dtw_dist_data):
     plt.close(fig)
     print(f"  Saved → {out.relative_to(BASE_DIR)}")
 
+# ── Training analysis plots ────────────────────────────────────────────────────
+
+def plot_oob_curve(oob_data):
+    """OOB error vs number of trees — analog of a validation loss curve."""
+    df  = pd.DataFrame(oob_data)
+    ex_order = [EX_SHORT[e] for e in EXERCISES]
+    colors   = ["#4C72B0", "#55A868", "#C44E52", "#DD8452"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
+    for ax, det in zip(axes, ["YOLO", "MediaPipe"]):
+        sub = df[df["Detector"] == det]
+        for ex, col in zip(ex_order, colors):
+            grp = sub[sub["Exercise"] == ex].sort_values("n_trees")
+            ax.plot(grp["n_trees"], grp["OOB Error"],
+                    marker="o", markersize=4, linewidth=1.8,
+                    color=col, label=ex.replace("\n", " — "))
+        ax.set_title(f"{det} — OOB Error vs Trees", fontsize=10, fontweight="bold")
+        ax.set_xlabel("Number of Trees", fontsize=9)
+        ax.set_ylabel("OOB Error (1 − OOB Score)", fontsize=9)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+        ax.set_ylim(0, None)
+        ax.grid(axis="y", alpha=0.3, linestyle="--")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=4,
+               fontsize=8.5, framealpha=0.92, edgecolor="#cccccc",
+               bbox_to_anchor=(0.5, -0.05))
+    fig.suptitle("Random Forest — OOB Error Convergence\n"
+                 "(out-of-bag error is an unbiased estimate of generalisation error; "
+                 "analog of a validation loss curve)",
+                 fontsize=11, fontweight="bold")
+    plt.tight_layout(rect=[0, 0.08, 1, 1])
+    out = OUT_DIR / "training_oob_curve.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved → {out.relative_to(BASE_DIR)}")
+
+
+def plot_train_vs_test(train_acc_data):
+    """Side-by-side train vs test accuracy per exercise — shows the generalisation gap."""
+    df       = pd.DataFrame(train_acc_data)
+    ex_order = [EX_SHORT[e] for e in EXERCISES]
+    x        = np.arange(len(ex_order))
+    width    = 0.2
+    det_col  = {"YOLO": ("#4C72B0", "#9DC3E6"), "MediaPipe": ("#C44E52", "#F4A8A8")}
+
+    fig, ax = plt.subplots(figsize=(11, 4.8))
+    offsets = [-1.5, -0.5, 0.5, 1.5]
+    labels  = ["YOLO Train", "YOLO Test", "MediaPipe Train", "MediaPipe Test"]
+    colors  = [det_col["YOLO"][0], det_col["YOLO"][1],
+               det_col["MediaPipe"][0], det_col["MediaPipe"][1]]
+    cols_data = [
+        ("YOLO",      "Train Acc"),
+        ("YOLO",      "Test Acc"),
+        ("MediaPipe", "Train Acc"),
+        ("MediaPipe", "Test Acc"),
+    ]
+
+    for off, lbl, col, (det, col_key) in zip(offsets, labels, colors, cols_data):
+        vals = []
+        for ex in ex_order:
+            row = df[(df["Detector"] == det) & (df["Exercise"] == ex)]
+            vals.append(float(row[col_key].values[0]) if len(row) else 0)
+        bars = ax.bar(x + off * width, vals, width, label=lbl,
+                      color=col, edgecolor="white", linewidth=0.6, alpha=0.9)
+        for bar, v in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.01,
+                    f"{v:.0%}", ha="center", va="bottom",
+                    fontsize=7, fontweight="bold", color=col)
+
+    ax.axhline(0.5, color="#888888", linestyle=":", linewidth=1.2,
+               label="Chance level (50%)")
+    ax.set_xticks(x)
+    ax.set_xticklabels([e.replace("\n", " — ") for e in ex_order], fontsize=9)
+    ax.set_ylabel("Accuracy", fontsize=10)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+    ax.set_ylim(0, 1.2)
+    ax.set_title("Random Forest — Train vs Test Accuracy\n"
+                 "(gap between dark/light bars = overfitting; "
+                 "small absolute values = limited generalisation)",
+                 fontsize=11, fontweight="bold", pad=10)
+    ax.legend(fontsize=8.5, loc="upper right", framealpha=0.92,
+              edgecolor="#cccccc", ncol=5)
+    ax.grid(axis="y", alpha=0.3, linestyle="--")
+    ax.set_axisbelow(True)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    plt.tight_layout()
+    out = OUT_DIR / "training_train_vs_test.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved → {out.relative_to(BASE_DIR)}")
+
+
+def plot_feature_importance(feat_imp_data):
+    """Heatmap: stat type × joint angle, averaged across exercises per detector."""
+    df = pd.DataFrame(feat_imp_data)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    for ax, det in zip(axes, ["YOLO", "MediaPipe"]):
+        sub = df[df["Detector"] == det]
+        # Average across exercises
+        mean_imp = sub.groupby("Feature")["Importance"].mean()
+
+        # Build 8-stat × 4-joint matrix
+        mat = np.zeros((len(FSTATS), len(JOINTS)))
+        for si, stat in enumerate(FSTATS):
+            for ji, joint in enumerate(JOINTS):
+                key = f"{stat}_{joint}"
+                mat[si, ji] = mean_imp.get(key, 0.0)
+
+        sns.heatmap(mat, annot=True, fmt=".3f", cmap="YlOrRd",
+                    xticklabels=JOINTS, yticklabels=FSTATS,
+                    linewidths=0.4, linecolor="white",
+                    cbar_kws={"shrink": 0.85, "label": "Mean Gini Importance"},
+                    ax=ax, vmin=0)
+        ax.set_title(f"{det} — Feature Importance\n(averaged across 4 exercises)",
+                     fontsize=10, fontweight="bold", pad=8)
+        ax.set_xlabel("Joint Angle", fontsize=9)
+        ax.set_ylabel("Feature Statistic", fontsize=9)
+        ax.tick_params(axis="x", labelsize=8.5)
+        ax.tick_params(axis="y", labelsize=8.5, rotation=0)
+
+    fig.suptitle("Random Forest — Feature Importance Heatmap\n"
+                 "Which angle statistics the model learned to rely on",
+                 fontsize=11, fontweight="bold")
+    plt.tight_layout()
+    out = OUT_DIR / "training_feature_importance.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved → {out.relative_to(BASE_DIR)}")
+
+
+def plot_dtw_margin(dtw_dist_data):
+    """
+    Decision margin = d_to_incomplete − d_to_complete.
+    Positive → predicted Complete; negative → predicted Incomplete.
+    Colour = true class.  Correctly classified points are on the expected side of 0.
+    """
+    df = pd.DataFrame(dtw_dist_data)
+    df["Margin"] = df["d_to_incomplete"] - df["d_to_complete"]
+
+    ex_order  = [EX_SHORT[e] for e in EXERCISES]
+    cls_col   = {"Complete": "#4C72B0", "Incomplete": "#C44E52"}
+    cls_mark  = {"Complete": "o", "Incomplete": "s"}
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharey=False)
+    for ax, det in zip(axes, ["YOLO", "MediaPipe"]):
+        sub = df[df["Detector"] == det]
+        ax.axhline(0, color="#555555", linewidth=1.3, linestyle="--", zorder=1)
+        ax.fill_between([-0.5, len(ex_order) - 0.5], 0,
+                         sub["Margin"].max() * 1.15 + 1,
+                         color="#4C72B0", alpha=0.05, zorder=0)
+        ax.fill_between([-0.5, len(ex_order) - 0.5],
+                         sub["Margin"].min() * 1.15 - 1, 0,
+                         color="#C44E52", alpha=0.05, zorder=0)
+
+        for cls in ["Complete", "Incomplete"]:
+            grp = sub[sub["True Class"] == cls]
+            for _, row in grp.iterrows():
+                xi = ex_order.index(row["Exercise"])
+                predicted = "Complete" if row["Margin"] > 0 else "Incomplete"
+                correct   = (predicted == cls)
+                ax.scatter(
+                    xi + np.random.uniform(-0.18, 0.18),
+                    row["Margin"],
+                    marker     = cls_mark[cls],
+                    color      = cls_col[cls] if correct else "white",
+                    edgecolors = cls_col[cls],
+                    linewidths = 1.8,
+                    s          = 60,
+                    zorder     = 3,
+                    alpha      = 0.88,
+                )
+
+        ax.set_xticks(range(len(ex_order)))
+        ax.set_xticklabels([e.replace("\n", " — ") for e in ex_order],
+                           fontsize=8.5, rotation=12, ha="right")
+        ax.set_ylabel("Decision Margin  d_incomplete − d_complete  (°)", fontsize=9)
+        ax.set_title(f"{det} — DTW Decision Margin\n"
+                     "↑ above 0 = predicted Complete  |  ↓ below 0 = predicted Incomplete",
+                     fontsize=10, fontweight="bold")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(axis="y", alpha=0.3, linestyle="--")
+        ax.set_xlim(-0.5, len(ex_order) - 0.5)
+
+    legend_els = [
+        plt.scatter([], [], marker="o", color="#4C72B0",  s=55, label="True: Complete (correct)"),
+        plt.scatter([], [], marker="o", color="white", edgecolors="#4C72B0",
+                    linewidths=1.8, s=55, label="True: Complete (wrong)"),
+        plt.scatter([], [], marker="s", color="#C44E52",  s=55, label="True: Incomplete (correct)"),
+        plt.scatter([], [], marker="s", color="white", edgecolors="#C44E52",
+                    linewidths=1.8, s=55, label="True: Incomplete (wrong)"),
+    ]
+    fig.legend(handles=legend_els, loc="lower center", ncol=4,
+               fontsize=8.5, framealpha=0.95, edgecolor="#cccccc",
+               bbox_to_anchor=(0.5, -0.04))
+    fig.suptitle("Angular DTW — Decision Margin per Test Sample\n"
+                 "Larger absolute margin = more confident prediction",
+                 fontsize=11, fontweight="bold")
+    plt.tight_layout(rect=[0, 0.08, 1, 1])
+    out = OUT_DIR / "training_dtw_margin.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved → {out.relative_to(BASE_DIR)}")
+
+
 # ── Narrative summary ──────────────────────────────────────────────────────────
 
 def print_summary(df_metrics):
@@ -592,25 +855,41 @@ def main():
     print("\nFYP2 Evaluation & Report Generator")
     print(f"Outputs → {OUT_DIR.relative_to(BASE_DIR)}/")
 
-    print("\n[1/4] Running classifiers and generating confusion matrices …")
-    all_metrics, dtw_dist_data = run_evaluation()
+    print("\n[1/8] Running classifiers and generating confusion matrices …")
+    all_metrics, dtw_dist_data, oob_data, train_acc_data, feat_imp_data = run_evaluation()
 
-    print("\n[2/4] Building metrics table …")
+    print("\n[2/8] Building metrics table …")
     df_metrics = print_metrics_table(all_metrics)
 
-    print("\n[3/4] Plotting comparison bar chart …")
+    print("\n[3/8] Plotting comparison bar chart …")
     plot_comparison_chart(df_metrics)
 
-    print("\n[4/4] Plotting Angular DTW distribution (YOLO) …")
+    print("\n[4/8] Plotting Angular DTW decision scatter …")
     plot_dtw_distribution(dtw_dist_data)
+
+    print("\n[5/8] Plotting RF OOB error curve …")
+    plot_oob_curve(oob_data)
+
+    print("\n[6/8] Plotting train vs test accuracy …")
+    plot_train_vs_test(train_acc_data)
+
+    print("\n[7/8] Plotting feature importance heatmap …")
+    plot_feature_importance(feat_imp_data)
+
+    print("\n[8/8] Plotting DTW decision margin …")
+    plot_dtw_margin(dtw_dist_data)
 
     print_summary(df_metrics)
 
     print(f"\nAll outputs written to:  {OUT_DIR}/")
-    print(f"  confusion_matrices/    — 16 heatmaps")
-    print(f"  metrics_table.csv      — full results")
-    print(f"  comparison_chart.png   — grouped bar chart")
-    print(f"  dtw_distribution.png   — violin plots")
+    print(f"  confusion_matrices/        — 16 heatmaps")
+    print(f"  metrics_table.csv          — full results")
+    print(f"  comparison_chart.png       — grouped bar chart")
+    print(f"  dtw_distribution.png       — DTW decision scatter")
+    print(f"  training_oob_curve.png     — RF OOB error vs trees")
+    print(f"  training_train_vs_test.png — train vs test accuracy")
+    print(f"  training_feature_importance.png — RF feature importance")
+    print(f"  training_dtw_margin.png    — DTW decision margin")
 
 
 if __name__ == "__main__":

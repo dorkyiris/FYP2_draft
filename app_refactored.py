@@ -1063,9 +1063,9 @@ elif app_mode == "6. FYP Benchmark Results":
         "4 exercises × 2 detectors × 2 classifiers = **16 combinations**."
     )
 
-    _r6_tab_chart, _r6_tab_dtw, _r6_tab_heat, _r6_tab_table, _r6_tab_cm = st.tabs([
+    _r6_tab_chart, _r6_tab_dtw, _r6_tab_heat, _r6_tab_train, _r6_tab_table, _r6_tab_cm = st.tabs([
         "Comparison Chart", "DTW Decision Space", "Accuracy Heatmap",
-        "Metrics Table", "Confusion Matrices",
+        "Training Analysis", "Metrics Table", "Confusion Matrices",
     ])
 
     with _r6_tab_chart:
@@ -1143,6 +1143,55 @@ elif app_mode == "6. FYP Benchmark Results":
             )
         else:
             st.warning("Run `python scripts/evaluate_and_report.py` to generate outputs.")
+
+    with _r6_tab_train:
+        _train_plots = [
+            (
+                "training_oob_curve.png",
+                "OOB Error Convergence (analog of a loss curve)",
+                "The out-of-bag error drops steeply in the first ~100 trees then plateaus — "
+                "this is where the model has converged. YOLO curves reach ~8–11% OOB error "
+                "(strong training signal). MediaPipe only shows Ex4 because the others share "
+                "identical training data structure, meaning the forest stabilises faster with "
+                "less signal diversity.",
+            ),
+            (
+                "training_train_vs_test.png",
+                "Train vs Test Accuracy",
+                "Train accuracy is ~99–100% across all conditions — the RF memorises the "
+                "training data perfectly. Test accuracy drops to 40–55%, exposing a large "
+                "overfitting gap. This is expected: with leave-one-subject-out evaluation "
+                "the test subject's motion style was never seen during training.",
+            ),
+            (
+                "training_feature_importance.png",
+                "RF Feature Importance Heatmap",
+                "Which of the 32 angle statistics the RF learned to rely on. "
+                "Darker cells = higher Gini importance. "
+                "Velocity statistics (Vel_Mean, Vel_Std) tend to dominate — "
+                "how fast the joint moves matters more than its average position. "
+                "Max and range (Q75−Q25) also carry weight, capturing peak extension.",
+            ),
+            (
+                "training_dtw_margin.png",
+                "DTW Decision Margin per Test Sample",
+                "Each dot is one test video. Margin = d_to_incomplete − d_to_complete. "
+                "Positive → predicted Complete; negative → predicted Incomplete. "
+                "Filled = correct, hollow = wrong. "
+                "YOLO Ex2 shows the cleanest separation — all points far from zero on the "
+                "correct side. MediaPipe points cluster near zero with many on the wrong side, "
+                "confirming the noisy landmark detection degrades DTW separability.",
+            ),
+        ]
+        for _fname, _title, _caption in _train_plots:
+            _p = _OUT_DIR / _fname
+            st.markdown(f"#### {_title}")
+            if _p.exists():
+                st.image(str(_p), use_container_width=True)
+                st.caption(_caption)
+            else:
+                st.warning(f"`{_fname}` not found — run `python scripts/evaluate_and_report.py`.")
+            st.markdown("---")
 
     with _r6_tab_table:
         _csv_p = _OUT_DIR / "metrics_table.csv"
