@@ -1063,8 +1063,9 @@ elif app_mode == "6. FYP Benchmark Results":
         "4 exercises × 2 detectors × 2 classifiers = **16 combinations**."
     )
 
-    _r6_tab_chart, _r6_tab_dtw, _r6_tab_table, _r6_tab_cm = st.tabs([
-        "Comparison Chart", "DTW Distribution", "Metrics Table", "Confusion Matrices"
+    _r6_tab_chart, _r6_tab_dtw, _r6_tab_heat, _r6_tab_table, _r6_tab_cm = st.tabs([
+        "Comparison Chart", "DTW Decision Space", "Accuracy Heatmap",
+        "Metrics Table", "Confusion Matrices",
     ])
 
     with _r6_tab_chart:
@@ -1077,7 +1078,69 @@ elif app_mode == "6. FYP Benchmark Results":
     with _r6_tab_dtw:
         _dtw_p = _OUT_DIR / "dtw_distribution.png"
         if _dtw_p.exists():
+            st.markdown(
+                "Each point is one test video. "
+                "The **x-axis** is its DTW distance to the *Complete* training centroid; "
+                "the **y-axis** is its distance to the *Incomplete* centroid. "
+                "The dashed diagonal is the decision boundary — "
+                "points **above** it are predicted Complete, **below** Incomplete. "
+                "**Filled** markers = correct prediction, **hollow** = misclassification."
+            )
             st.image(str(_dtw_p), use_container_width=True)
+        else:
+            st.warning("Run `python scripts/evaluate_and_report.py` to generate outputs.")
+
+    with _r6_tab_heat:
+        _csv_p2 = _OUT_DIR / "metrics_table.csv"
+        if _csv_p2.exists():
+            _mt2 = pd.read_csv(_csv_p2)
+            _mt2["Accuracy"] = pd.to_numeric(_mt2["Accuracy"], errors="coerce")
+            _mt2["F1"]       = pd.to_numeric(_mt2["F1"],       errors="coerce")
+            _mt2["Ex"] = _mt2["Exercise"].map({
+                "1_Lifting an Object":   "Ex1\nLifting Object",
+                "2_Extending the Elbow": "Ex2\nExtending Elbow",
+                "3_Lifting the Wrist":   "Ex3\nLifting Wrist",
+                "4_Opening the Hand":    "Ex4\nOpening Hand",
+            })
+            _mt2["Condition"] = _mt2["Detector"] + " + " + _mt2["Classifier"].str.replace("Random Forest", "RF")
+
+            _cond_order = ["YOLO + Angular DTW", "YOLO + RF",
+                           "MediaPipe + Angular DTW", "MediaPipe + RF"]
+
+            _col_h1, _col_h2 = st.columns(2)
+            for _col_h, _metric, _title, _fmt in [
+                (_col_h1, "Accuracy", "Accuracy Heatmap", ".0%"),
+                (_col_h2, "F1",       "F1 Score Heatmap", ".2f"),
+            ]:
+                _piv = _mt2.pivot_table(
+                    index="Condition", columns="Ex", values=_metric, aggfunc="first"
+                ).reindex(_cond_order)
+                _piv = _piv[[c for c in [
+                    "Ex1\nLifting Object", "Ex2\nExtending Elbow",
+                    "Ex3\nLifting Wrist",  "Ex4\nOpening Hand",
+                ] if c in _piv.columns]]
+
+                _fig_h, _ax_h = plt.subplots(figsize=(6, 3.2))
+                sns.heatmap(
+                    _piv, annot=True, fmt=_fmt, cmap="RdYlGn",
+                    vmin=0, vmax=(1.0 if _metric == "Accuracy" else 1.0),
+                    linewidths=0.5, linecolor="white",
+                    cbar_kws={"shrink": 0.8}, ax=_ax_h,
+                )
+                _ax_h.set_title(_title, fontsize=11, fontweight="bold", pad=8)
+                _ax_h.set_xlabel("")
+                _ax_h.set_ylabel("")
+                _ax_h.tick_params(axis="x", labelsize=8)
+                _ax_h.tick_params(axis="y", labelsize=8.5, rotation=0)
+                plt.tight_layout()
+                _col_h.pyplot(_fig_h)
+                plt.close(_fig_h)
+
+            st.caption(
+                "Colour scale: red = low, yellow = mid, green = high. "
+                "YOLO + Angular DTW on Ex2 (Extending Elbow) achieves 100 % — "
+                "the clearest single-joint motion in the dataset."
+            )
         else:
             st.warning("Run `python scripts/evaluate_and_report.py` to generate outputs.")
 
@@ -1085,12 +1148,31 @@ elif app_mode == "6. FYP Benchmark Results":
         _csv_p = _OUT_DIR / "metrics_table.csv"
         if _csv_p.exists():
             _mt = pd.read_csv(_csv_p)
+            # Summary KPIs above table
+            _mt_num = _mt.copy()
+            _mt_num["Accuracy"] = pd.to_numeric(_mt_num["Accuracy"], errors="coerce")
+            _mt_num["F1"]       = pd.to_numeric(_mt_num["F1"],       errors="coerce")
+            _kc1, _kc2, _kc3, _kc4 = st.columns(4)
+            _best_row = _mt_num.loc[_mt_num["Accuracy"].idxmax()]
+            _kc1.metric("Best Accuracy",
+                        f"{_best_row['Accuracy']:.0%}",
+                        f"{_best_row['Detector']} DTW – Ex2")
+            _kc2.metric("Mean YOLO DTW Acc",
+                        f"{_mt_num[(_mt_num.Detector=='YOLO')&(_mt_num.Classifier=='Angular DTW')]['Accuracy'].mean():.0%}")
+            _kc3.metric("Mean MediaPipe DTW Acc",
+                        f"{_mt_num[(_mt_num.Detector=='MediaPipe')&(_mt_num.Classifier=='Angular DTW')]['Accuracy'].mean():.0%}")
+            _kc4.metric("Conditions > 40% baseline",
+                        f"{(_mt_num['Accuracy'] > 0.40).sum()} / {len(_mt_num)}")
+
             _f1_cols = [c for c in _mt.columns if "f1" in c.lower() or c.lower() == "f1"]
+            _acc_cols = [c for c in _mt.columns if c.lower() == "accuracy"]
             _styled = _mt.style
             for _fc in _f1_cols:
                 _styled = _styled.map(_f1_color, subset=[_fc])
+            for _ac in _acc_cols:
+                _styled = _styled.map(_f1_color, subset=[_ac])
             st.dataframe(_styled, hide_index=True, use_container_width=True)
-            st.caption("F1 colour: green > 0.70, amber 0.40–0.70, red < 0.40")
+            st.caption("Colour: green > 0.70, amber 0.40–0.70, red < 0.40  (applied to Accuracy and F1)")
             with open(str(_csv_p), "rb") as _cf:
                 st.download_button("Download CSV", _cf, file_name="metrics_table.csv", mime="text/csv")
         else:

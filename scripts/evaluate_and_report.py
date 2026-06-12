@@ -299,14 +299,15 @@ def run_evaluation():
                 "Mean Angular DTW (°)": round(mean_dtw, 4),
             })
 
-            # Collect DTW distances for violin plot (YOLO only)
-            if det == "YOLO":
-                for r, d in zip(test_rec, dist_info):
-                    dtw_dist_data.append({
-                        "Exercise": EX_SHORT[exercise],
-                        "Class":    "Complete" if r["label"] == 1 else "Incomplete",
-                        "DTW dist (°)": d["d_to_own_class"],
-                    })
+            # Collect full DTW distances for scatter plot (both detectors)
+            for r, d in zip(test_rec, dist_info):
+                dtw_dist_data.append({
+                    "Detector":        det,
+                    "Exercise":        EX_SHORT[exercise],
+                    "True Class":      "Complete" if r["label"] == 1 else "Incomplete",
+                    "d_to_complete":   d["d_to_complete"],
+                    "d_to_incomplete": d["d_to_incomplete"],
+                })
 
             print(f"  {exercise}")
             print(f"    RF  — Acc:{rf_acc:.2%}  P:{rf_prec:.2%}  R:{rf_rec:.2%}  F1:{rf_f1:.2%}")
@@ -395,52 +396,126 @@ def plot_comparison_chart(df_metrics):
     plt.close(fig)
     print(f"  Saved → {out.relative_to(BASE_DIR)}")
 
-# ── DTW distribution plot ──────────────────────────────────────────────────────
+# ── DTW decision scatter plot ──────────────────────────────────────────────────
 
 def plot_dtw_distribution(dtw_dist_data):
+    """
+    For each of the 8 detector × exercise combinations, plot every test sample
+    as a point at (d_to_complete, d_to_incomplete).  Points above the y = x
+    diagonal are classified Complete; points below are Incomplete.
+    Marker shape encodes true class; fill colour encodes correct/incorrect.
+    """
     df = pd.DataFrame(dtw_dist_data)
 
-    fig, axes = plt.subplots(1, 4, figsize=(14, 5), sharey=False)
-    palette   = {"Complete": "#4C72B0", "Incomplete": "#C44E52"}
+    detectors = ["YOLO", "MediaPipe"]
+    fig, axes = plt.subplots(
+        2, 4,
+        figsize=(15, 8),
+        sharex=False, sharey=False,
+    )
 
-    for ax, exercise in zip(axes, EXERCISES):
-        ex_short = EX_SHORT[exercise]
-        sub = df[df["Exercise"] == ex_short]
+    # Colour: true class.  Edge: correct (solid) vs wrong (dashed ring)
+    cls_color  = {"Complete": "#4C72B0", "Incomplete": "#C44E52"}
+    cls_marker = {"Complete": "o",       "Incomplete": "s"}
 
-        if sub.empty:
-            ax.set_visible(False)
-            continue
+    for row_idx, det in enumerate(detectors):
+        for col_idx, exercise in enumerate(EXERCISES):
+            ax      = axes[row_idx, col_idx]
+            ex_short = EX_SHORT[exercise]
+            sub     = df[(df["Detector"] == det) & (df["Exercise"] == ex_short)]
 
-        sns.violinplot(data=sub, x="Class", y="DTW dist (°)",
-                       palette=palette, inner="box", linewidth=1.2,
-                       order=["Complete", "Incomplete"], ax=ax,
-                       density_norm="width")
+            if sub.empty:
+                ax.set_visible(False)
+                continue
 
-        # Overlay individual points
-        for cls, color in palette.items():
-            pts = sub[sub["Class"] == cls]["DTW dist (°)"]
-            xpos = ["Complete", "Incomplete"].index(cls)
-            ax.scatter(np.full(len(pts), xpos) + np.random.uniform(-0.06, 0.06, len(pts)),
-                       pts, color=color, s=28, zorder=5, alpha=0.75, edgecolors="white",
-                       linewidths=0.4)
+            # Axis limits with a little padding
+            all_vals = pd.concat([sub["d_to_complete"], sub["d_to_incomplete"]])
+            lo, hi   = all_vals.min(), all_vals.max()
+            pad      = (hi - lo) * 0.12 or 1.0
+            lo -= pad;  hi += pad
 
-        ax.set_title(ex_short.replace("\n", " — "), fontsize=9.5, fontweight="bold")
-        ax.set_xlabel("")
-        ax.set_ylabel("Mean Angular DTW Distance (°)" if ax is axes[0] else "")
-        ax.tick_params(axis="x", labelsize=9)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+            # Decision boundary: y = x
+            ax.plot([lo, hi], [lo, hi], "--", color="#888888",
+                    linewidth=1.2, zorder=1, label="Decision boundary")
 
-    # Legend
-    handles = [mpatches.Patch(color=c, label=l) for l, c in palette.items()]
-    fig.legend(handles=handles, loc="upper center", ncol=2, fontsize=9.5,
-               framealpha=0.92, edgecolor="#cccccc", bbox_to_anchor=(0.5, 1.02))
+            # Shade regions: above diagonal → predicted Complete (blue tint)
+            #                below diagonal → predicted Incomplete (red tint)
+            ax.fill_between([lo, hi], [lo, hi], hi,
+                            color="#4C72B0", alpha=0.06, zorder=0)
+            ax.fill_between([lo, hi], lo, [lo, hi],
+                            color="#C44E52", alpha=0.06, zorder=0)
 
-    fig.suptitle("YOLO – Angular DTW: Distance to Own-Class Centroid (Test Set)\n"
-                 "Lower = motion trajectory closer to training reference",
-                 fontsize=11, fontweight="bold", y=1.06)
+            # One pass per true-class group
+            for cls in ["Complete", "Incomplete"]:
+                grp = sub[sub["True Class"] == cls]
+                for _, srow in grp.iterrows():
+                    dc, di = srow["d_to_complete"], srow["d_to_incomplete"]
+                    predicted = "Complete" if dc <= di else "Incomplete"
+                    correct   = (predicted == cls)
+                    ax.scatter(
+                        dc, di,
+                        marker     = cls_marker[cls],
+                        color      = cls_color[cls] if correct else "white",
+                        edgecolors = cls_color[cls],
+                        linewidths = 1.8,
+                        s          = 70,
+                        zorder     = 3,
+                        alpha      = 0.92,
+                    )
 
-    plt.tight_layout()
+            ax.set_xlim(lo, hi)
+            ax.set_ylim(lo, hi)
+            ax.set_aspect("equal", "box")
+
+            ax.set_xlabel("Distance → Complete centroid (°)", fontsize=8)
+            if col_idx == 0:
+                ax.set_ylabel("Distance → Incomplete centroid (°)", fontsize=8)
+
+            ax.set_title(
+                f"{det} — {ex_short.replace(chr(10), ' ')}",
+                fontsize=9, fontweight="bold", pad=5,
+            )
+            ax.tick_params(labelsize=7.5)
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+
+            # Accuracy annotation inside the panel
+            n_total   = len(sub)
+            n_correct = sum(
+                1 for _, srow in sub.iterrows()
+                if (srow["d_to_complete"] <= srow["d_to_incomplete"]) == (srow["True Class"] == "Complete")
+            )
+            acc = n_correct / n_total if n_total else 0
+            ax.text(0.97, 0.04, f"Acc {acc:.0%}",
+                    transform=ax.transAxes, ha="right", va="bottom",
+                    fontsize=8.5, fontweight="bold",
+                    color="#155724" if acc >= 0.7 else ("#856404" if acc >= 0.4 else "#721c24"),
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                              edgecolor="#cccccc", alpha=0.85))
+
+    # Shared legend
+    legend_elements = [
+        plt.scatter([], [], marker="o", color="#4C72B0", s=60,
+                    label="True: Complete  (correct)"),
+        plt.scatter([], [], marker="o", color="white", edgecolors="#4C72B0",
+                    linewidths=1.8, s=60, label="True: Complete  (wrong)"),
+        plt.scatter([], [], marker="s", color="#C44E52", s=60,
+                    label="True: Incomplete (correct)"),
+        plt.scatter([], [], marker="s", color="white", edgecolors="#C44E52",
+                    linewidths=1.8, s=60, label="True: Incomplete (wrong)"),
+    ]
+    fig.legend(handles=legend_elements, loc="lower center", ncol=4,
+               fontsize=8.5, framealpha=0.95, edgecolor="#cccccc",
+               bbox_to_anchor=(0.5, -0.02))
+
+    fig.suptitle(
+        "Angular DTW Classification — Decision Space\n"
+        "Points above the diagonal → predicted Complete; below → predicted Incomplete\n"
+        "Filled = correct prediction, hollow = misclassification",
+        fontsize=11, fontweight="bold", y=1.01,
+    )
+
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
     out = OUT_DIR / "dtw_distribution.png"
     fig.savefig(out, bbox_inches="tight")
     plt.close(fig)
