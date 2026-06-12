@@ -1,302 +1,728 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
+"""
+FYP2 — Vision-Based Rehabilitation Assessment
+Benchmarking MediaPipe Pose vs YOLOv8 (Nandana et al. 2026 dataset)
 
-#M1 MAC SAFE MATPLOTLIB FIX
-import matplotlib
-matplotlib.use('Agg') 
-import matplotlib.pyplot as plt
+Run with: streamlit run app.py
+"""
 
-import seaborn as sns
-import cv2
-import mediapipe as mp
-import tempfile
+import sys
 import os
+import time
+import tempfile
+import warnings
+import urllib.request
+from pathlib import Path
 
-# 1. SETUP & CONFIGURATION
-st.set_page_config(page_title="Tele-Rehab Kinematic Dashboard", page_icon="⚕️", layout="wide")
-sns.set_theme(style="whitegrid", context="paper")
+warnings.filterwarnings("ignore")
 
-mp_pose = mp.solutions.pose
+# ── Import feature-extraction logic from training script ───────────────────────
+_SCRIPTS = Path(__file__).parent / "scripts"
+sys.path.insert(0, str(_SCRIPTS))
+from train_classifier import (          # noqa: E402
+    compute_yolo_angles,
+    compute_mp_angles,
+    build_features,
+    angular_dtw,
+    _resample,
+    EXERCISES,
+    YOLO_DIR,
+    MP_DIR,
+)
 
-# 2. BIOMECHANICAL MATH ENGINE
-def calculate_2d_angle(a, b, c):
-    """Trigonometry for joint angles."""
-    radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
-    angle = np.abs(radians * 180.0 / np.pi)
-    if angle > 180.0: angle = 360.0 - angle
-    return angle
+import numpy as np
+import pandas as pd
+import joblib
+import cv2
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import streamlit as st
 
-@st.cache_data 
-def extract_kinematic_angles(df, ex_num):
-    """Translates (X,Y) coordinates into readable medical angles for CSVs."""
-    r_shoulder, r_elbow, r_wrist, r_hip = 12, 14, 16, 24
-    angles_df = df.copy()
-    shoulder_angles, elbow_angles = [], []
-    
-    for index, row in angles_df.iterrows():
-        try:
-            hip = [row[f'Lm{r_hip}_x'], row[f'Lm{r_hip}_y']]
-            shoulder = [row[f'Lm{r_shoulder}_x'], row[f'Lm{r_shoulder}_y']]
-            elbow = [row[f'Lm{r_elbow}_x'], row[f'Lm{r_elbow}_y']]
-            wrist = [row[f'Lm{r_wrist}_x'], row[f'Lm{r_wrist}_y']]
-            
-            shoulder_angles.append(calculate_2d_angle(hip, shoulder, elbow))
-            elbow_angles.append(calculate_2d_angle(shoulder, elbow, wrist))
-        except KeyError:
-            shoulder_angles.append(np.nan)
-            elbow_angles.append(np.nan)
-            
-    angles_df['Shoulder_Angle'] = shoulder_angles
-    angles_df['Elbow_Angle'] = elbow_angles
-    
-    # Smooth the lines for the UI
-    angles_df['Shoulder_Angle'] = angles_df['Shoulder_Angle'].ewm(span=3).mean()
-    angles_df['Elbow_Angle'] = angles_df['Elbow_Angle'].ewm(span=3).mean()
-    return angles_df
+# ── Paths ──────────────────────────────────────────────────────────────────────
+BASE_DIR   = Path(__file__).parent
+ASSETS_DIR = BASE_DIR / "assets"
+MODEL_DIR  = ASSETS_DIR / "models"
+OUT_DIR    = BASE_DIR / "outputs"
+CM_DIR     = OUT_DIR / "confusion_matrices"
+MP_MODEL   = ASSETS_DIR / "pose_landmarker_lite.task"
 
-# 3. LIVE & RECORDED VIDEO ENGINE
-def draw_clinical_overlay(frame, landmarks, width, height, exercise_num):
-    """Handles the math and drawing for a single video frame."""
-    shoulder = [landmarks[12].x * width, landmarks[12].y * height]
-    elbow = [landmarks[14].x * width, landmarks[14].y * height]
-    wrist = [landmarks[16].x * width, landmarks[16].y * height]
-    hip = [landmarks[24].x * width, landmarks[24].y * height] 
-    
-    ui_color = (0, 0, 255) # Red Default
-    status_text = "Tracking..."
-    
-    if landmarks[12].visibility > 0.65 and landmarks[14].visibility > 0.65:
-        if exercise_num == 1:
-            elbow_angle = calculate_2d_angle(shoulder, elbow, wrist)
-            if elbow_angle >= 160.0:
-                ui_color = (0, 255, 0); status_text = f"Form: PASS ({elbow_angle:.0f} deg)"
-            else:
-                ui_color = (0, 0, 255); status_text = f"FAIL: Keep Arm Straight! ({elbow_angle:.0f} deg)"
-                
-        elif exercise_num == 2:
-            shoulder_angle = calculate_2d_angle(hip, shoulder, elbow)
-            if shoulder_angle >= 120.0:
-                ui_color = (0, 255, 0); status_text = f"Target 'V' Reached! ({shoulder_angle:.0f} deg)"
-            elif shoulder_angle <= 90.0:
-                ui_color = (0, 165, 255); status_text = f"Target 'W' Reached! ({shoulder_angle:.0f} deg)"
-            else:
-                ui_color = (0, 255, 255); status_text = f"Transitioning... ({shoulder_angle:.0f} deg)"
-                
-        elif exercise_num == 3:
-            elbow_angle = calculate_2d_angle(shoulder, elbow, wrist)
-            if elbow_angle <= 100.0: 
-                ui_color = (0, 255, 0); status_text = f"Depth: PASS ({elbow_angle:.0f} deg)"
-            else:
-                ui_color = (0, 0, 255); status_text = f"FAIL: Go Deeper! ({elbow_angle:.0f} deg)"
+EX_LABELS = {
+    "1_Lifting an Object":   "Ex1 — Lifting an Object",
+    "2_Extending the Elbow": "Ex2 — Extending the Elbow",
+    "3_Lifting the Wrist":   "Ex3 — Lifting the Wrist",
+    "4_Opening the Hand":    "Ex4 — Opening the Hand",
+}
 
-        # Draw Skeleton
-        s_tup, e_tup = (int(shoulder[0]), int(shoulder[1])), (int(elbow[0]), int(elbow[1]))
-        w_tup, h_tup = (int(wrist[0]), int(wrist[1])), (int(hip[0]), int(hip[1]))
-        
-        cv2.line(frame, s_tup, e_tup, ui_color, 4)
-        cv2.line(frame, e_tup, w_tup, ui_color, 4)
-        if exercise_num in [2, 3]:
-            cv2.line(frame, h_tup, s_tup, ui_color, 4)
-            cv2.circle(frame, h_tup, 5, ui_color, -1)
+YOLO_SKELETON = [
+    (0,1),(0,2),(1,3),(2,4),
+    (5,7),(7,9),(6,8),(8,10),
+    (5,6),(5,11),(6,12),(11,12),
+    (11,13),(13,15),(12,14),(14,16),
+]
 
-        for pt in [s_tup, e_tup, w_tup]: cv2.circle(frame, pt, 5, ui_color, -1)
-        cv2.putText(frame, status_text, (40, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, ui_color, 3)
-        
-    return frame
+DTW_N = 60   # frames used for centroid resampling
 
-def process_recorded_video(video_path, exercise_num):
-    """Processes uploaded MP4 files."""
-    cap = cv2.VideoCapture(video_path)
-    width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
+# ── MediaPipe model download ───────────────────────────────────────────────────
 
-    tfile_out = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-    output_path = tfile_out.name
-    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'avc1'), fps, (width, height))
-    
-    my_bar = st.progress(0, text="Processing Video Frames...")
-    total_frames, frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 0
+def _ensure_mp_model():
+    if not MP_MODEL.exists():
+        url = ("https://storage.googleapis.com/mediapipe-models/"
+               "pose_landmarker/pose_landmarker_lite/float16/latest/"
+               "pose_landmarker_lite.task")
+        with st.spinner("Downloading MediaPipe pose model (~6 MB)…"):
+            urllib.request.urlretrieve(url, MP_MODEL)
 
-    with mp_pose.Pose(min_detection_confidence=0.65, min_tracking_confidence=0.65) as pose:
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret: break
+# ── Page config (must be first Streamlit call) ─────────────────────────────────
+st.set_page_config(
+    page_title="FYP2 — Rehab Exercise Assessment",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-            image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-            # Lock memory for Apple Silicon
-            image_rgb.flags.writeable = False 
-            results = pose.process(image_rgb)
-            
-            #THE READ-ONLY FIX: Unlock memory so OpenCV can draw!
-            image_rgb.flags.writeable = True
+# ── Minimal global style ───────────────────────────────────────────────────────
+st.markdown("""
+<style>
+div[data-testid="stTabs"] button { font-size: 15px; font-weight: 600; }
+.result-box { padding: 18px 24px; border-radius: 8px; font-size: 22px;
+              font-weight: 700; text-align: center; margin: 12px 0; }
+.complete   { background:#d4edda; color:#155724; border:1px solid #c3e6cb; }
+.incomplete { background:#f8d7da; color:#721c24; border:1px solid #f5c6cb; }
+.metric-row { display:flex; gap:16px; margin:8px 0; }
+</style>
+""", unsafe_allow_html=True)
 
-            if results.pose_landmarks:
-                frame = draw_clinical_overlay(frame, results.pose_landmarks.landmark, width, height, exercise_num)
+# ── Cached: DTW centroids (mean angle sequences per class) ─────────────────────
 
-            out.write(frame)
-            frame_count += 1
-            if total_frames > 0: my_bar.progress(min(frame_count / total_frames, 1.0))
+@st.cache_resource(show_spinner="Building DTW centroids from training data…")
+def load_dtw_centroids():
+    """
+    Load all training CSVs, compute mean angle trajectory per
+    (detector, exercise, class) triplet.  Cached for the session lifetime.
+    """
+    centroids = {}
+    for det, root, angle_fn in [
+        ("YOLO",      YOLO_DIR, compute_yolo_angles),
+        ("MediaPipe", MP_DIR,   compute_mp_angles),
+    ]:
+        for exercise in EXERCISES:
+            for lname, lval in [("Complete", 1), ("Incomplete", 0)]:
+                split_dir = root / exercise / lname / "Train"
+                if not split_dir.exists():
+                    continue
+                seqs = []
+                for p in sorted(split_dir.glob("*.csv")):
+                    try:
+                        df     = pd.read_csv(p)
+                        angles = angle_fn(df)
+                        valid  = np.abs(angles).sum(axis=1) > 0
+                        angles = angles[valid]
+                        if len(angles) >= 10:
+                            seqs.append(_resample(angles, DTW_N))
+                    except Exception:
+                        pass
+                if seqs:
+                    centroids[(det, exercise, lval)] = np.mean(seqs, axis=0)
+    return centroids
 
-    cap.release(); out.release(); my_bar.empty()
-    return output_path
+# ── Cached: RF model loader ────────────────────────────────────────────────────
 
-# 4. SIDEBAR NAVIGATION
-st.sidebar.markdown("## 🎓 Multimedia University")
-st.sidebar.markdown("**FYP 2: Tele-Rehabilitation System**")
-st.sidebar.markdown("---")
+@st.cache_resource
+def load_rf_model(detector: str, exercise: str):
+    slug = exercise.replace(" ", "_")
+    path = MODEL_DIR / f"{detector}_{slug}_rf.pkl"
+    if not path.exists():
+        return None
+    return joblib.load(path)
 
-app_mode = st.sidebar.radio("Select Application Mode", [
-    "1. Static Data Analysis (CSV)", 
-    "2. Upload Video Analysis (MP4)",
-    "3. Live Webcam Analysis 🔴",
-    "4. Project Analytics & Stats"
-])
-st.sidebar.markdown("---")
-selected_exercise = st.sidebar.selectbox("Select Clinical Exercise", [1, 2, 3], format_func=lambda x: f"Exercise {x}")
+# ── Feature extraction from a DataFrame ───────────────────────────────────────
 
-# 5. MAIN DASHBOARD ROUTING
-st.title("⚕️ Vision-Based Rehabilitation Assessment")
+def features_from_df(df: pd.DataFrame, detector: str):
+    angle_fn = compute_yolo_angles if detector == "YOLO" else compute_mp_angles
+    feats = build_features(df, angle_fn)
+    if feats is None:
+        return None, None
+    angles = angle_fn(df)
+    valid  = np.abs(angles).sum(axis=1) > 0
+    angles = angles[valid]
+    return feats, angles
 
-# --- MODE 1: CSV DATA ANALYSIS ---
-if app_mode == "1. Static Data Analysis (CSV)":
-    st.markdown("Automated clinical grading using **MediaPipe** and **Dynamic Time Warping (DTW)**.")
-    uploaded_csv = st.file_uploader("Upload Patient Coordinate Data (CSV)", type=["csv"])
-    
-    if uploaded_csv is not None:
-        raw_df = pd.read_csv(uploaded_csv)
-        with st.spinner('Applying Strict Filter and calculating biomechanical angles...'):
-            kinematic_df = extract_kinematic_angles(raw_df, ex_num=selected_exercise)
-        
-        #THE BLANK GRAPH FIX: Drop NaNs so the line plotting doesn't break
-        plot_df = kinematic_df[['Shoulder_Angle', 'Elbow_Angle']].dropna()
-            
-        st.success("✅ Data Processed Successfully!")
-        
-        titles = {
-            1: ('Right Shoulder Abduction', 'Right Elbow Flexion (Constraint)', 90, 160, 'Clinical Fail Zone'),
-            2: ('Arm "V" to "W" Transition', 'Elbow Tracking', 120, 90, 'Target Transition Zone'),
-            3: ('Inclined Push-up Alignment', 'Elbow Flexion (Depth)', 150, 100, 'Target Depth Required')
-        }
-        title_1, title_2, target_line_1, fail_line_2, fail_label = titles[selected_exercise]
+# ── Classification ─────────────────────────────────────────────────────────────
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-        
-        # Plotting with the cleaned data (plot_df)
-        sns.lineplot(data=plot_df, x=plot_df.index, y='Shoulder_Angle', ax=ax1, color='#2b7bba', linewidth=2.5)
-        ax1.set_title(title_1, fontsize=12, fontweight='bold')
-        ax1.axhline(y=target_line_1, color='red', linestyle='--', alpha=0.5, label=f'Target: {target_line_1}°')
-        ax1.legend()
+def classify_rf(feats: np.ndarray, detector: str, exercise: str):
+    model = load_rf_model(detector, exercise)
+    if model is None:
+        return None, None, "Model file not found."
+    X    = feats.reshape(1, -1)
+    pred = int(model.predict(X)[0])
+    prob = model.predict_proba(X)[0]   # [prob_class0, prob_class1]
+    conf = prob[pred]
+    return pred, conf, None
 
-        sns.lineplot(data=plot_df, x=plot_df.index, y='Elbow_Angle', ax=ax2, color='#5cb85c', linewidth=2.5)
-        ax2.set_title(title_2, fontsize=12, fontweight='bold')
-        ax2.set_ylim(0, 200)
-        ax2.axhline(y=fail_line_2, color='orange', linestyle='--', alpha=0.7, label=f'{fail_label}: {fail_line_2}°')
-        ax2.legend()
-        st.pyplot(fig)
 
-# --- MODE 2: UPLOADED VIDEO PROCESSING ---
-elif app_mode == "2. Upload Video Analysis (MP4)":
-    uploaded_video = st.file_uploader("Upload Raw Patient Video (MP4)", type=["mp4", "mov"])
-    if uploaded_video is not None:
-        tfile_in = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') 
-        tfile_in.write(uploaded_video.read())
-        
-        if st.button("▶️ Process Clinical Video"):
-            processed_video_path = process_recorded_video(tfile_in.name, selected_exercise)
-            st.success("✅ Video Processed! Rendering playback...")
-            st.video(open(processed_video_path, 'rb').read())
-            os.remove(tfile_in.name); os.remove(processed_video_path)
+def classify_dtw(angles: np.ndarray, detector: str, exercise: str, centroids: dict):
+    ref_c = centroids.get((detector, exercise, 1))
+    ref_i = centroids.get((detector, exercise, 0))
+    if ref_c is None or ref_i is None:
+        return None, None, None, "DTW centroids unavailable for this combination."
+    seq  = _resample(angles, DTW_N)
+    d_c  = angular_dtw(seq, ref_c)
+    d_i  = angular_dtw(seq, ref_i)
+    pred = 1 if d_c <= d_i else 0
+    return pred, d_c, d_i, None
 
-# --- MODE 3: LIVE WEBCAM ---
-elif app_mode == "3. Live Webcam Analysis 🔴":
-    st.markdown("### Real-Time Edge Computing Demonstration")
-    st.warning("Make sure your terminal has permission to access the Mac Camera!")
-    
-    start_cam = st.checkbox("Turn On Webcam")
-    FRAME_WINDOW = st.image([])
-    
-    if start_cam:
-        camera = cv2.VideoCapture(0) # 0 is the default Mac webcam
-        with mp_pose.Pose(min_detection_confidence=0.65, min_tracking_confidence=0.65) as pose:
-            while start_cam:
-                ret, frame = camera.read()
-                if not ret:
-                    st.error("Cannot access webcam.")
-                    break
-                
-                frame = cv2.flip(frame, 1) # Mirror image
-                
-                width, height = frame.shape[1], frame.shape[0]
-                image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
-                # Lock memory for Apple Silicon
-                image_rgb.flags.writeable = False
-                results = pose.process(image_rgb)
-                
-                # 🌟 THE READ-ONLY FIX: Unlock memory!
-                image_rgb.flags.writeable = True
-                
-                if results.pose_landmarks:
-                    frame_rgb = draw_clinical_overlay(image_rgb, results.pose_landmarks.landmark, width, height, selected_exercise)
-                    FRAME_WINDOW.image(frame_rgb)
-                else:
-                    FRAME_WINDOW.image(image_rgb)
-        camera.release()
+# ── Result display ─────────────────────────────────────────────────────────────
+
+def show_result(pred: int, classifier: str,
+                conf=None, d_c=None, d_i=None):
+    label = "Complete" if pred == 1 else "Incomplete"
+    icon  = "✅" if pred == 1 else "❌"
+    cls   = "complete" if pred == 1 else "incomplete"
+    st.markdown(
+        f'<div class="result-box {cls}">{icon} {label}</div>',
+        unsafe_allow_html=True,
+    )
+    if classifier == "Random Forest" and conf is not None:
+        st.progress(float(conf), text=f"Model confidence: {conf:.1%}")
+    elif classifier == "Angular DTW" and d_c is not None and d_i is not None:
+        total = d_c + d_i + 1e-9
+        conf_c = d_i / total   # lower distance to Complete → higher Complete score
+        st.caption(
+            f"Distance to Complete centroid: **{d_c:.3f}°**  |  "
+            f"Distance to Incomplete centroid: **{d_i:.3f}°**"
+        )
+        st.progress(float(conf_c), text=f"Complete score: {conf_c:.1%}")
+
+# ── YOLO video processing ──────────────────────────────────────────────────────
+
+def process_video_yolo(video_path: str, exercise: str, classifier: str,
+                       centroids: dict):
+    from ultralytics import YOLO as _YOLO
+
+    yolo = _YOLO(str(BASE_DIR / "yolov8n-pose.pt"))
+
+    cap   = cv2.VideoCapture(video_path)
+    fps   = cap.get(cv2.CAP_PROP_FPS) or 30
+    w     = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h     = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    if total < 10:
+        cap.release()
+        return None, None, "Video too short (< 10 frames)."
+
+    # ── First pass: extract keypoints into a DataFrame ─────────────────────────
+    rows, frames_buf = [], []
+    progress = st.progress(0, text="Extracting YOLO keypoints…")
+    frame_idx = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        results = yolo(frame, verbose=False)
+        kps = results[0].keypoints
+        if kps is not None and len(kps.xy) > 0 and kps.xy.shape[1] == 17:
+            xy   = kps.xy[0].cpu().numpy()    # (17, 2)
+            conf = kps.conf[0].cpu().numpy()  # (17,)
+            row  = {"frame": frame_idx}
+            for i in range(17):
+                row[f"kp{i}_x"]    = xy[i, 0]
+                row[f"kp{i}_y"]    = xy[i, 1]
+                row[f"kp{i}_conf"] = conf[i]
+            rows.append(row)
+        frames_buf.append(frame)
+        frame_idx += 1
+        if total > 0:
+            progress.progress(min(frame_idx / total * 0.5, 0.5))
+    cap.release()
+    progress.empty()
+
+    if len(rows) < 10:
+        return None, None, (
+            f"YOLO detected keypoints in only {len(rows)} frames "
+            f"(need ≥ 10). Check video quality."
+        )
+
+    df = pd.DataFrame(rows)
+
+    # ── Classify ───────────────────────────────────────────────────────────────
+    feats, angles = features_from_df(df, "YOLO")
+    if feats is None:
+        return None, None, "Feature extraction failed — not enough valid frames."
+
+    if classifier == "Random Forest":
+        pred, conf_val, err = classify_rf(feats, "YOLO", exercise)
+        d_c = d_i = None
     else:
-        st.info("Click the checkbox to activate the camera.")
+        pred, d_c, d_i, err = classify_dtw(angles, "YOLO", exercise, centroids)
+        conf_val = None
+    if err:
+        return None, None, err
 
-# --- MODE 4: PROJECT ANALYTICS ---
-elif app_mode == "4. Project Analytics & Stats":
-    st.markdown("### FYP 2 Data Validations (REHAB24-6 Dataset)")
-    
-    tab1, tab2 = st.tabs(["Environmental Robustness", "Ablation Study (Error Reduction)"])
-    
-    with tab1:
-        st.markdown("#### System Performance in Real-World Clinical Noise")
-        st.markdown("The pipeline's resilience against real-world clinical variables.")
-        
-        # THE ANALYTICS FIX: Complete tables from your notebook
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("**💡 Lighting Conditions**")
-            st.markdown("*(0 = Standard, 1 = Artificial)*")
-            df_light = pd.DataFrame({'lights_on': [0, 1], 'accuracy_pct': [100.00, 83.33]})
-            st.dataframe(df_light, hide_index=True, use_container_width=True)
-            
-        with col2:
-            st.markdown("**🎥 Camera Direction (Occlusion)**")
-            st.markdown("*(Angle of the patient)*")
-            df_cam = pd.DataFrame({'cam17_orientation': ['front', 'half-profile'], 'accuracy_pct': [87.50, 100.00]})
-            st.dataframe(df_cam, hide_index=True, use_container_width=True)
-            
-        with col3:
-            st.markdown("**🚶 Background Clutter**")
-            st.markdown("*(Extra person in frame)*")
-            df_clutter = pd.DataFrame({'extra_person_in_cam17': [0, 1], 'accuracy_pct': [88.88, 100.00]})
-            st.dataframe(df_clutter, hide_index=True, use_container_width=True)
-            
-        st.info("📌 **Clinical Observation:** The system maintains 100% accuracy with background clutter, validating the Foreground Priority logic.")
+    # ── Second pass: draw skeleton overlay ────────────────────────────────────
+    out_path = tempfile.mktemp(suffix=".mp4")
+    fourcc   = cv2.VideoWriter_fourcc(*"avc1")
+    writer   = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
 
-    with tab2:
-        st.markdown("#### Spatial Tracking Error Reduction via Strict Filter")
-        ablation_data = pd.DataFrame({
-            'Pipeline Phase': ['Raw MediaPipe', '+ Bounding Box', '+ 12-Point Check', '+ Kinematic EMA (Strict)'],
-            'Spatial Error': [0.04355, 0.04452, 0.04452, 0.03314]
-        })
-        fig, ax = plt.subplots(figsize=(8, 4))
-        sns.barplot(data=ablation_data, x='Pipeline Phase', y='Spatial Error', palette=['#d9534f', '#d9534f', '#d9534f', '#5cb85c'], ax=ax)
-        ax.set_ylabel('Avg Euclidean Distance')
-        plt.xticks(rotation=15)
-        st.pyplot(fig)
-        st.success("**Outcome:** 25.5% reduction in spatial tracking error.")
+    color = (34, 139, 34) if pred == 1 else (220, 50, 47)   # green / red (BGR)
+    label = ("✓ Complete" if pred == 1 else "✗ Incomplete")
 
-# 6. GLOBAL BENCHMARKS FOOTER
-st.markdown("---")
-st.markdown("### System Accuracy vs 3D ML SOTA (Černek et al. 2024)")
-col1, col2, col3 = st.columns(3)
-col1.metric("Ex 1 (Arm Abduction)", "91.7%", "+25.5% Gain via Filter")
-col2.metric("Ex 2 (Arm VW)", "81.8%", "Edge Computing Optimized")
-col3.metric("Ex 3 (Push-ups)", "77.8%", "Subject to Foreshortening")
+    row_map = {int(r["frame"]): r for r in rows}
+    progress2 = st.progress(0, text="Rendering annotated video…")
+
+    for fi, frame in enumerate(frames_buf):
+        if fi in row_map:
+            r = row_map[fi]
+            kp_pts = [(int(r[f"kp{i}_x"]), int(r[f"kp{i}_y"])) for i in range(17)]
+            for a, b in YOLO_SKELETON:
+                if (r.get(f"kp{a}_conf", 0) > 0.3 and
+                        r.get(f"kp{b}_conf", 0) > 0.3):
+                    cv2.line(frame, kp_pts[a], kp_pts[b], color, 2)
+            for i, pt in enumerate(kp_pts):
+                if r.get(f"kp{i}_conf", 0) > 0.3:
+                    cv2.circle(frame, pt, 4, color, -1)
+        cv2.rectangle(frame, (0, 0), (w, 40), (0, 0, 0), -1)
+        cv2.putText(frame, f"YOLO | {label}", (10, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.85, color, 2)
+        writer.write(frame)
+        progress2.progress(min((fi + 1) / len(frames_buf), 1.0))
+
+    writer.release()
+    progress2.empty()
+
+    result_bundle = {
+        "pred": pred, "conf": conf_val, "d_c": d_c, "d_i": d_i,
+        "n_frames": len(frames_buf), "det_frames": len(rows),
+    }
+    return out_path, result_bundle, None
+
+# ── MediaPipe video processing ─────────────────────────────────────────────────
+
+def process_video_mp(video_path: str, exercise: str, classifier: str,
+                     centroids: dict):
+    import mediapipe as mp
+    from mediapipe.tasks import python as mpt
+    from mediapipe.tasks.python.vision import (
+        PoseLandmarker, PoseLandmarkerOptions, RunningMode,
+    )
+
+    _ensure_mp_model()
+
+    base_opts = mpt.BaseOptions(model_asset_path=str(MP_MODEL))
+    opts = PoseLandmarkerOptions(
+        base_options=base_opts,
+        running_mode=RunningMode.VIDEO,
+        num_poses=1,
+        min_pose_detection_confidence=0.5,
+        min_pose_presence_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+
+    cap   = cv2.VideoCapture(video_path)
+    fps   = cap.get(cv2.CAP_PROP_FPS) or 30
+    w     = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h     = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    if total < 10:
+        cap.release()
+        return None, None, "Video too short (< 10 frames)."
+
+    rows, frames_buf = [], []
+    progress = st.progress(0, text="Extracting MediaPipe landmarks…")
+    frame_idx = 0
+
+    with PoseLandmarker.create_from_options(opts) as lm:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            ts_ms  = int(frame_idx * 1000 / fps)
+            result = lm.detect_for_video(mp_img, ts_ms)
+
+            if result.pose_landmarks:
+                lms = result.pose_landmarks[0]   # list of NormalizedLandmark
+                row = {"frame": frame_idx}
+                for i, lmk in enumerate(lms):
+                    row[f"lm{i}_x"]   = lmk.x
+                    row[f"lm{i}_y"]   = lmk.y
+                    row[f"lm{i}_z"]   = lmk.z
+                    row[f"lm{i}_vis"] = getattr(lmk, "visibility", 1.0)
+                rows.append(row)
+            frames_buf.append(frame)
+            frame_idx += 1
+            if total > 0:
+                progress.progress(min(frame_idx / total * 0.5, 0.5))
+    cap.release()
+    progress.empty()
+
+    if len(rows) < 10:
+        return None, None, (
+            f"MediaPipe detected landmarks in only {len(rows)} frames "
+            f"(need ≥ 10). Check video quality / lighting."
+        )
+
+    df = pd.DataFrame(rows)
+
+    feats, angles = features_from_df(df, "MediaPipe")
+    if feats is None:
+        return None, None, "Feature extraction failed — not enough valid frames."
+
+    if classifier == "Random Forest":
+        pred, conf_val, err = classify_rf(feats, "MediaPipe", exercise)
+        d_c = d_i = None
+    else:
+        pred, d_c, d_i, err = classify_dtw(angles, "MediaPipe", exercise, centroids)
+        conf_val = None
+    if err:
+        return None, None, err
+
+    # Annotated video
+    out_path = tempfile.mktemp(suffix=".mp4")
+    fourcc   = cv2.VideoWriter_fourcc(*"avc1")
+    writer   = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+    color    = (34, 139, 34) if pred == 1 else (220, 50, 47)
+    label    = ("✓ Complete" if pred == 1 else "✗ Incomplete")
+
+    # MediaPipe pose connections (hand-coded for Tasks API output)
+    MP_CONNECTIONS = [
+        (11,12),(11,13),(12,14),(13,15),(14,16),  # arms/shoulders
+        (11,23),(12,24),(23,24),                   # torso
+        (23,25),(24,26),(25,27),(26,28),            # legs
+    ]
+
+    row_map = {int(r["frame"]): r for r in rows}
+    progress2 = st.progress(0, text="Rendering annotated video…")
+
+    for fi, frame in enumerate(frames_buf):
+        if fi in row_map:
+            r  = row_map[fi]
+            pts = [(int(r.get(f"lm{i}_x", 0) * w),
+                    int(r.get(f"lm{i}_y", 0) * h)) for i in range(33)]
+            for a, b in MP_CONNECTIONS:
+                vis_a = r.get(f"lm{a}_vis", 0)
+                vis_b = r.get(f"lm{b}_vis", 0)
+                if vis_a > 0.3 and vis_b > 0.3:
+                    cv2.line(frame, pts[a], pts[b], color, 2)
+            for i in range(33):
+                if r.get(f"lm{i}_vis", 0) > 0.3:
+                    cv2.circle(frame, pts[i], 4, color, -1)
+        cv2.rectangle(frame, (0, 0), (w, 40), (0, 0, 0), -1)
+        cv2.putText(frame, f"MediaPipe | {label}", (10, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.85, color, 2)
+        writer.write(frame)
+        progress2.progress(min((fi + 1) / len(frames_buf), 1.0))
+
+    writer.release()
+    progress2.empty()
+
+    result_bundle = {
+        "pred": pred, "conf": conf_val, "d_c": d_c, "d_i": d_i,
+        "n_frames": len(frames_buf), "det_frames": len(rows),
+    }
+    return out_path, result_bundle, None
+
+# ── Metrics table with colour highlights ───────────────────────────────────────
+
+def _f1_color(val):
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return ""
+    if v > 0.7:
+        return "background-color: #d4edda; color: #155724"
+    if v >= 0.4:
+        return "background-color: #fff3cd; color: #856404"
+    return "background-color: #f8d7da; color: #721c24"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# APP — HEADER
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.title("FYP2 — Vision-Based Rehabilitation Exercise Assessment")
+st.caption("MediaPipe Pose vs YOLOv8 | Nandana et al. 2026 Dataset | "
+           "Binary classification: Complete (1) vs Incomplete (0)")
+
+tab1, tab2 = st.tabs(["Analyse Exercise", "Results & Evaluation"])
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — ANALYSE EXERCISE
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab1:
+    # Controls row
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns([1, 1, 2, 1])
+
+    with ctrl_col1:
+        detector = st.selectbox("Detector", ["YOLO", "MediaPipe"])
+    with ctrl_col2:
+        classifier = st.selectbox("Classifier",
+                                  ["Random Forest", "Angular DTW"])
+    with ctrl_col3:
+        exercise = st.selectbox(
+            "Exercise",
+            EXERCISES,
+            format_func=lambda e: EX_LABELS[e],
+        )
+    with ctrl_col4:
+        mode = st.selectbox("Input mode", ["CSV Upload", "Video Upload"])
+
+    st.divider()
+
+    # ── Sub-mode A: CSV Upload ─────────────────────────────────────────────────
+    if mode == "CSV Upload":
+        st.markdown(
+            f"**Upload a pre-extracted keypoint CSV** "
+            f"({detector} format — same column layout as training data)"
+        )
+
+        if detector == "YOLO":
+            st.caption(
+                "Expected columns: `frame, kp0_x, kp0_y, kp0_conf, …, kp16_conf` "
+                "(52 columns total, 17 COCO keypoints)"
+            )
+        else:
+            st.caption(
+                "Expected columns: `frame, lm0_x, lm0_y, lm0_z, lm0_vis, …, lm32_vis` "
+                "(133 columns total, 33 MediaPipe landmarks)"
+            )
+
+        uploaded = st.file_uploader("Upload CSV", type=["csv"],
+                                    label_visibility="collapsed")
+
+        if uploaded is not None:
+            try:
+                df = pd.read_csv(uploaded)
+            except Exception as e:
+                st.error(f"Cannot read CSV: {e}")
+                st.stop()
+
+            st.caption(f"Loaded: {len(df)} rows × {len(df.columns)} columns")
+
+            with st.spinner("Extracting features…"):
+                feats, angles = features_from_df(df, detector)
+
+            if feats is None:
+                st.warning(
+                    "Not enough valid frames after removing all-zero rows "
+                    "(need ≥ 5). The detector may have failed on most frames."
+                )
+                st.stop()
+
+            # Classify
+            if classifier == "Random Forest":
+                with st.spinner("Running Random Forest…"):
+                    pred, conf, err = classify_rf(feats, detector, exercise)
+                if err:
+                    st.error(err); st.stop()
+                show_result(pred, classifier, conf=conf)
+
+            else:  # Angular DTW
+                centroids = load_dtw_centroids()
+                with st.spinner("Computing Angular DTW…"):
+                    pred, d_c, d_i, err = classify_dtw(
+                        angles, detector, exercise, centroids)
+                if err:
+                    st.error(err); st.stop()
+                show_result(pred, classifier, d_c=d_c, d_i=d_i)
+
+            # Angle trajectory plot
+            with st.expander("View extracted angle trajectories"):
+                angle_fn = (compute_yolo_angles if detector == "YOLO"
+                            else compute_mp_angles)
+                ang = angle_fn(df)
+                valid = np.abs(ang).sum(axis=1) > 0
+                ang   = ang[valid]
+                if len(ang) > 0:
+                    fig, ax = plt.subplots(figsize=(9, 3))
+                    labels = ["L Elbow", "R Elbow", "L Shoulder", "R Shoulder"]
+                    for k, lbl in enumerate(labels):
+                        ax.plot(ang[:, k], label=lbl, linewidth=1.4)
+                    ax.set_xlabel("Frame")
+                    ax.set_ylabel("Angle (°)")
+                    ax.set_title(f"{detector} — {EX_LABELS[exercise]} — angle trajectories")
+                    ax.legend(fontsize=8, loc="upper right")
+                    ax.spines["top"].set_visible(False)
+                    ax.spines["right"].set_visible(False)
+                    st.pyplot(fig, use_container_width=True)
+                    plt.close(fig)
+
+    # ── Sub-mode B: Video Upload ───────────────────────────────────────────────
+    else:
+        st.markdown(
+            "**Upload a raw video** (MP4 / AVI). "
+            "The selected detector runs frame-by-frame to extract keypoints, "
+            "then classifies the full sequence."
+        )
+
+        uploaded_video = st.file_uploader(
+            "Upload video", type=["mp4", "avi", "mov"],
+            label_visibility="collapsed"
+        )
+
+        if uploaded_video is not None:
+            # Save to temp file
+            suffix = Path(uploaded_video.name).suffix or ".mp4"
+            tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            tmp_in.write(uploaded_video.read())
+            tmp_in.flush()
+            tmp_in.close()
+
+            t_start = time.time()
+
+            centroids = load_dtw_centroids()
+
+            if detector == "YOLO":
+                out_path, bundle, err = process_video_yolo(
+                    tmp_in.name, exercise, classifier, centroids)
+            else:
+                out_path, bundle, err = process_video_mp(
+                    tmp_in.name, exercise, classifier, centroids)
+
+            os.unlink(tmp_in.name)
+            elapsed = time.time() - t_start
+
+            if err:
+                st.warning(err)
+                st.stop()
+
+            # Result
+            show_result(
+                bundle["pred"], classifier,
+                conf=bundle.get("conf"),
+                d_c=bundle.get("d_c"),
+                d_i=bundle.get("d_i"),
+            )
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total frames", bundle["n_frames"])
+            m2.metric("Frames with detections", bundle["det_frames"])
+            m3.metric("Processing time", f"{elapsed:.1f} s")
+
+            # Annotated video
+            if out_path and Path(out_path).exists():
+                st.markdown("**Annotated video**")
+                with open(out_path, "rb") as f:
+                    st.video(f.read())
+                os.unlink(out_path)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — RESULTS & EVALUATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab2:
+
+    # ── Comparison bar chart ───────────────────────────────────────────────────
+    st.subheader("Accuracy comparison across all conditions")
+    chart_path = OUT_DIR / "comparison_chart.png"
+    if chart_path.exists():
+        st.image(str(chart_path), use_container_width=True)
+        st.caption(
+            "Grouped bar chart comparing Random Forest and Angular DTW accuracy "
+            "for YOLO and MediaPipe across all 4 exercises. "
+            "Dashed line = Nandana et al. 2026 baseline (~40 %). "
+            "YOLO Angular DTW achieves 100 % on Ex2 (Extending the Elbow) — a "
+            "single-joint motion with a highly consistent angle trajectory."
+        )
+    else:
+        st.info("Run `scripts/evaluate_and_report.py` to generate this chart.")
+
+    st.divider()
+
+    # ── DTW distribution ──────────────────────────────────────────────────────
+    st.subheader("Angular DTW distance distributions (YOLO — test set)")
+    dtw_path = OUT_DIR / "dtw_distribution.png"
+    if dtw_path.exists():
+        st.image(str(dtw_path), use_container_width=True)
+        st.caption(
+            "Violin plots showing the distribution of Angular DTW distances "
+            "(mean over 4 angles, normalised by path length) from each test "
+            "sample to its own-class centroid. Lower = motion trajectory closer "
+            "to training reference. Ex2 shows tight, well-separated distributions "
+            "explaining the 100 % DTW accuracy."
+        )
+    else:
+        st.info("Run `scripts/evaluate_and_report.py` to generate this plot.")
+
+    st.divider()
+
+    # ── Metrics table ─────────────────────────────────────────────────────────
+    st.subheader("Full metrics table")
+    metrics_path = OUT_DIR / "metrics_table.csv"
+    if metrics_path.exists():
+        df_met = pd.read_csv(metrics_path)
+
+        # Display options
+        det_filter = st.multiselect(
+            "Filter by detector",
+            options=df_met["Detector"].unique().tolist(),
+            default=df_met["Detector"].unique().tolist(),
+        )
+        df_show = df_met[df_met["Detector"].isin(det_filter)].copy()
+
+        styled = (
+            df_show.style
+            .map(_f1_color, subset=["F1"])
+            .format({
+                "Accuracy":  "{:.2%}",
+                "Precision": "{:.2%}",
+                "Recall":    "{:.2%}",
+                "F1":        "{:.2%}",
+            }, na_rep="—")
+            .set_properties(**{"text-align": "center"})
+        )
+        st.dataframe(styled, use_container_width=True, height=380)
+        st.caption(
+            "F1 colour: green > 0.70 | yellow 0.40–0.70 | red < 0.40. "
+            "Mean Angular DTW is N/A for Random Forest (distance metric "
+            "applies only to the DTW nearest-centroid classifier)."
+        )
+    else:
+        st.info("Run `scripts/evaluate_and_report.py` to generate the metrics table.")
+
+    st.divider()
+
+    # ── Confusion matrix viewer ────────────────────────────────────────────────
+    st.subheader("Confusion matrices")
+
+    if CM_DIR.exists():
+        cm_files = sorted(CM_DIR.glob("*.png"))
+        if cm_files:
+            cm_col1, cm_col2, cm_col3 = st.columns(3)
+
+            with cm_col1:
+                cm_det = st.selectbox("Detector", ["YOLO", "MediaPipe"],
+                                       key="cm_det")
+            with cm_col2:
+                cm_ex = st.selectbox(
+                    "Exercise", EXERCISES,
+                    format_func=lambda e: EX_LABELS[e],
+                    key="cm_ex",
+                )
+            with cm_col3:
+                cm_clf = st.selectbox("Classifier", ["RF", "DTW"], key="cm_clf")
+
+            slug  = cm_ex.replace(" ", "_")
+            fname = f"{cm_det}_{slug}_{cm_clf}.png"
+            cm_path = CM_DIR / fname
+
+            if cm_path.exists():
+                st.image(str(cm_path), width=420)
+                st.caption(
+                    f"{cm_det} — {EX_LABELS[cm_ex]} — "
+                    f"{'Random Forest' if cm_clf=='RF' else 'Angular DTW'}. "
+                    "Rows = Actual, Columns = Predicted. "
+                    "Numbers inside cells: count (role)."
+                )
+            else:
+                available = [f.name for f in cm_files]
+                st.warning(
+                    f"`{fname}` not found. "
+                    f"Available: {', '.join(available[:4])}…"
+                )
+        else:
+            st.info("No confusion matrix images found in `outputs/confusion_matrices/`.")
+    else:
+        st.info("Run `scripts/evaluate_and_report.py` to generate confusion matrices.")

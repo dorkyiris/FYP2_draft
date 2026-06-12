@@ -43,6 +43,353 @@ from video.renderer import VideoRenderer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ── FYP classification pipeline ───────────────────────────────────────────────
+import sys
+import time
+import joblib
+import urllib.request
+from pathlib import Path
+
+_SCRIPTS_DIR = Path(__file__).parent / "scripts"
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from train_classifier import (          # noqa: E402
+    compute_yolo_angles,
+    compute_mp_angles,
+    build_features,
+    angular_dtw,
+    _resample,
+    EXERCISES as FYP_EXERCISES,
+    YOLO_DIR,
+    MP_DIR,
+)
+
+_BASE_DIR   = Path(__file__).parent
+_MODEL_DIR  = _BASE_DIR / "assets" / "models"
+_OUT_DIR    = _BASE_DIR / "outputs"
+_CM_DIR     = _OUT_DIR / "confusion_matrices"
+_MP_TASK    = _BASE_DIR / "assets" / "pose_landmarker_lite.task"
+_DTW_N      = 60
+
+_FYP_EX_LABELS = {
+    "1_Lifting an Object":   "Ex1 — Lifting an Object",
+    "2_Extending the Elbow": "Ex2 — Extending the Elbow",
+    "3_Lifting the Wrist":   "Ex3 — Lifting the Wrist",
+    "4_Opening the Hand":    "Ex4 — Opening the Hand",
+}
+
+_YOLO_SKELETON = [
+    (0,1),(0,2),(1,3),(2,4),
+    (5,7),(7,9),(6,8),(8,10),
+    (5,6),(5,11),(6,12),(11,12),
+    (11,13),(13,15),(12,14),(14,16),
+]
+
+_MP_CONNECTIONS = [
+    (11,12),(11,13),(12,14),(13,15),(14,16),
+    (11,23),(12,24),(23,24),(23,25),(24,26),(25,27),(26,28),
+]
+
+
+def _ensure_mp_task_model():
+    if not _MP_TASK.exists():
+        url = ("https://storage.googleapis.com/mediapipe-models/"
+               "pose_landmarker/pose_landmarker_lite/float16/latest/"
+               "pose_landmarker_lite.task")
+        with st.spinner("Downloading MediaPipe pose model (~6 MB)…"):
+            urllib.request.urlretrieve(url, _MP_TASK)
+
+
+@st.cache_resource(show_spinner="Building DTW centroids from training data…")
+def _load_dtw_centroids():
+    centroids = {}
+    for det, root, afn in [
+        ("YOLO",      YOLO_DIR, compute_yolo_angles),
+        ("MediaPipe", MP_DIR,   compute_mp_angles),
+    ]:
+        for ex in FYP_EXERCISES:
+            for lname, lval in [("Complete", 1), ("Incomplete", 0)]:
+                d = root / ex / lname / "Train"
+                if not d.exists():
+                    continue
+                seqs = []
+                for p in sorted(d.glob("*.csv")):
+                    try:
+                        df2    = pd.read_csv(p)
+                        ang    = afn(df2)
+                        valid  = np.abs(ang).sum(axis=1) > 0
+                        ang    = ang[valid]
+                        if len(ang) >= 10:
+                            seqs.append(_resample(ang, _DTW_N))
+                    except Exception:
+                        pass
+                if seqs:
+                    centroids[(det, ex, lval)] = np.mean(seqs, axis=0)
+    return centroids
+
+
+@st.cache_resource
+def _load_rf(detector: str, exercise: str):
+    slug = exercise.replace(" ", "_")
+    p = _MODEL_DIR / f"{detector}_{slug}_rf.pkl"
+    return joblib.load(p) if p.exists() else None
+
+
+def _features_from_df(df: pd.DataFrame, detector: str):
+    afn   = compute_yolo_angles if detector == "YOLO" else compute_mp_angles
+    feats = build_features(df, afn)
+    if feats is None:
+        return None, None
+    ang   = afn(df)
+    valid = np.abs(ang).sum(axis=1) > 0
+    return feats, ang[valid]
+
+
+def _classify_rf(feats, detector, exercise):
+    m = _load_rf(detector, exercise)
+    if m is None:
+        return None, None, "Model file not found."
+    pred = int(m.predict(feats.reshape(1, -1))[0])
+    prob = m.predict_proba(feats.reshape(1, -1))[0]
+    return pred, prob[pred], None
+
+
+def _classify_dtw(angles, detector, exercise, centroids):
+    ref_c = centroids.get((detector, exercise, 1))
+    ref_i = centroids.get((detector, exercise, 0))
+    if ref_c is None or ref_i is None:
+        return None, None, None, "DTW centroids unavailable for this combination."
+    seq  = _resample(angles, _DTW_N)
+    d_c  = angular_dtw(seq, ref_c)
+    d_i  = angular_dtw(seq, ref_i)
+    return (1 if d_c <= d_i else 0), d_c, d_i, None
+
+
+def _show_clf_result(pred, classifier, conf=None, d_c=None, d_i=None):
+    label = "Complete" if pred == 1 else "Incomplete"
+    icon  = "✅" if pred == 1 else "❌"
+    color = "green" if pred == 1 else "red"
+    st.markdown(
+        f"<div style='padding:16px 20px;border-radius:8px;"
+        f"background:{'#d4edda' if pred==1 else '#f8d7da'};"
+        f"color:{'#155724' if pred==1 else '#721c24'};"
+        f"font-size:22px;font-weight:700;text-align:center;margin:10px 0'>"
+        f"{icon} {label}</div>",
+        unsafe_allow_html=True,
+    )
+    if classifier == "Random Forest" and conf is not None:
+        st.progress(float(conf), text=f"Confidence: {conf:.1%}")
+    elif classifier == "Angular DTW" and d_c is not None:
+        total = d_c + d_i + 1e-9
+        st.progress(float(d_i / total),
+                    text=f"Complete score: {d_i/total:.1%}")
+        st.caption(
+            f"Distance → Complete centroid: **{d_c:.3f}°**  |  "
+            f"Incomplete centroid: **{d_i:.3f}°**"
+        )
+
+
+def _process_video_yolo(video_path, exercise, classifier, centroids):
+    from ultralytics import YOLO as _UltraYOLO
+    yolo  = _UltraYOLO(str(_BASE_DIR / "yolov8n-pose.pt"))
+    cap   = cv2.VideoCapture(video_path)
+    fps   = cap.get(cv2.CAP_PROP_FPS) or 30
+    w     = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h     = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    if total < 10:
+        cap.release()
+        return None, None, "Video too short (< 10 frames)."
+
+    rows, frames = [], []
+    prog = st.progress(0, text="Extracting YOLO keypoints…")
+    fi   = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        r = yolo(frame, verbose=False)
+        kps = r[0].keypoints
+        if kps is not None and len(kps.xy) > 0 and kps.xy.shape[1] == 17:
+            xy   = kps.xy[0].cpu().numpy()
+            conf = kps.conf[0].cpu().numpy()
+            row  = {"frame": fi}
+            for i in range(17):
+                row[f"kp{i}_x"]    = xy[i, 0]
+                row[f"kp{i}_y"]    = xy[i, 1]
+                row[f"kp{i}_conf"] = conf[i]
+            rows.append(row)
+        frames.append(frame)
+        fi += 1
+        if total > 0:
+            prog.progress(min(fi / total * 0.5, 0.5))
+    cap.release()
+    prog.empty()
+
+    if len(rows) < 10:
+        return None, None, (
+            f"YOLO detected keypoints in only {len(rows)} frames (need ≥ 10)."
+        )
+
+    df = pd.DataFrame(rows)
+    feats, angles = _features_from_df(df, "YOLO")
+    if feats is None:
+        return None, None, "Feature extraction failed — not enough valid frames."
+
+    if classifier == "Random Forest":
+        pred, conf_v, err = _classify_rf(feats, "YOLO", exercise)
+        d_c = d_i = None
+    else:
+        pred, d_c, d_i, err = _classify_dtw(angles, "YOLO", exercise, centroids)
+        conf_v = None
+    if err:
+        return None, None, err
+
+    # Annotated video
+    out   = tempfile.mktemp(suffix=".mp4")
+    fcc   = cv2.VideoWriter_fourcc(*"avc1")
+    wrt   = cv2.VideoWriter(out, fcc, fps, (w, h))
+    color = (34, 139, 34) if pred == 1 else (220, 50, 47)
+    label = ("✓ Complete" if pred == 1 else "✗ Incomplete")
+    rmap  = {int(r["frame"]): r for r in rows}
+    prog2 = st.progress(0, text="Rendering annotated video…")
+    for idx, frame in enumerate(frames):
+        if idx in rmap:
+            r    = rmap[idx]
+            pts  = [(int(r[f"kp{i}_x"]), int(r[f"kp{i}_y"])) for i in range(17)]
+            for a, b in _YOLO_SKELETON:
+                if r.get(f"kp{a}_conf", 0) > 0.3 and r.get(f"kp{b}_conf", 0) > 0.3:
+                    cv2.line(frame, pts[a], pts[b], color, 2)
+            for i, pt in enumerate(pts):
+                if r.get(f"kp{i}_conf", 0) > 0.3:
+                    cv2.circle(frame, pt, 4, color, -1)
+        cv2.rectangle(frame, (0, 0), (w, 40), (0, 0, 0), -1)
+        cv2.putText(frame, f"YOLO | {label}", (10, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.85, color, 2)
+        wrt.write(frame)
+        prog2.progress(min((idx + 1) / len(frames), 1.0))
+    wrt.release()
+    prog2.empty()
+
+    return out, {"pred": pred, "conf": conf_v, "d_c": d_c, "d_i": d_i,
+                 "n_frames": len(frames), "det_frames": len(rows)}, None
+
+
+def _process_video_mp(video_path, exercise, classifier, centroids):
+    import mediapipe as mp
+    from mediapipe.tasks import python as mpt
+    from mediapipe.tasks.python.vision import (
+        PoseLandmarker, PoseLandmarkerOptions, RunningMode,
+    )
+    _ensure_mp_task_model()
+
+    opts = PoseLandmarkerOptions(
+        base_options=mpt.BaseOptions(model_asset_path=str(_MP_TASK)),
+        running_mode=RunningMode.VIDEO,
+        num_poses=1,
+        min_pose_detection_confidence=0.5,
+        min_pose_presence_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+    cap   = cv2.VideoCapture(video_path)
+    fps   = cap.get(cv2.CAP_PROP_FPS) or 30
+    w     = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h     = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    if total < 10:
+        cap.release()
+        return None, None, "Video too short (< 10 frames)."
+
+    rows, frames = [], []
+    prog = st.progress(0, text="Extracting MediaPipe landmarks…")
+    fi   = 0
+    with PoseLandmarker.create_from_options(opts) as lm:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            result = lm.detect_for_video(mp_img, int(fi * 1000 / fps))
+            if result.pose_landmarks:
+                lms = result.pose_landmarks[0]
+                row = {"frame": fi}
+                for i, lmk in enumerate(lms):
+                    row[f"lm{i}_x"]   = lmk.x
+                    row[f"lm{i}_y"]   = lmk.y
+                    row[f"lm{i}_z"]   = lmk.z
+                    row[f"lm{i}_vis"] = getattr(lmk, "visibility", 1.0)
+                rows.append(row)
+            frames.append(frame)
+            fi += 1
+            if total > 0:
+                prog.progress(min(fi / total * 0.5, 0.5))
+    cap.release()
+    prog.empty()
+
+    if len(rows) < 10:
+        return None, None, (
+            f"MediaPipe detected landmarks in only {len(rows)} frames (need ≥ 10)."
+        )
+
+    df = pd.DataFrame(rows)
+    feats, angles = _features_from_df(df, "MediaPipe")
+    if feats is None:
+        return None, None, "Feature extraction failed — not enough valid frames."
+
+    if classifier == "Random Forest":
+        pred, conf_v, err = _classify_rf(feats, "MediaPipe", exercise)
+        d_c = d_i = None
+    else:
+        pred, d_c, d_i, err = _classify_dtw(angles, "MediaPipe", exercise, centroids)
+        conf_v = None
+    if err:
+        return None, None, err
+
+    out   = tempfile.mktemp(suffix=".mp4")
+    fcc   = cv2.VideoWriter_fourcc(*"avc1")
+    wrt   = cv2.VideoWriter(out, fcc, fps, (w, h))
+    color = (34, 139, 34) if pred == 1 else (220, 50, 47)
+    label = ("✓ Complete" if pred == 1 else "✗ Incomplete")
+    rmap  = {int(r["frame"]): r for r in rows}
+    prog2 = st.progress(0, text="Rendering annotated video…")
+    for idx, frame in enumerate(frames):
+        if idx in rmap:
+            r   = rmap[idx]
+            pts = [(int(r.get(f"lm{i}_x", 0) * w),
+                    int(r.get(f"lm{i}_y", 0) * h)) for i in range(33)]
+            for a, b in _MP_CONNECTIONS:
+                if r.get(f"lm{a}_vis", 0) > 0.3 and r.get(f"lm{b}_vis", 0) > 0.3:
+                    cv2.line(frame, pts[a], pts[b], color, 2)
+            for i in range(33):
+                if r.get(f"lm{i}_vis", 0) > 0.3:
+                    cv2.circle(frame, pts[i], 4, color, -1)
+        cv2.rectangle(frame, (0, 0), (w, 40), (0, 0, 0), -1)
+        cv2.putText(frame, f"MediaPipe | {label}", (10, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.85, color, 2)
+        wrt.write(frame)
+        prog2.progress(min((idx + 1) / len(frames), 1.0))
+    wrt.release()
+    prog2.empty()
+
+    return out, {"pred": pred, "conf": conf_v, "d_c": d_c, "d_i": d_i,
+                 "n_frames": len(frames), "det_frames": len(rows)}, None
+
+
+def _f1_color(val):
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return ""
+    if v > 0.7:
+        return "background-color:#d4edda;color:#155724"
+    if v >= 0.4:
+        return "background-color:#fff3cd;color:#856404"
+    return "background-color:#f8d7da;color:#721c24"
+
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
@@ -79,7 +426,9 @@ app_mode = st.sidebar.radio("Select Application Mode", [
     "1. Movement Data Analysis (CSV)",
     "2. Upload Video Analysis (MP4)",
     "3. Live Webcam Analysis",
-    "4. Project Analytics & Stats"
+    "4. Project Analytics & Stats",
+    "5. FYP Classification Demo",
+    "6. FYP Benchmark Results",
 ])
 
 st.sidebar.markdown("---")
@@ -619,6 +968,145 @@ elif app_mode == "4. Project Analytics & Stats":
         })
         st.dataframe(_summary, hide_index=True, use_container_width=True)
         st.info("MediaPipe meets the 30 fps real-time target (33.9 ms mean). YOLOv8 at 76.6 ms (~13 fps) is suitable for offline batch analysis.")
+
+# ============================================================================
+# MODE 5: FYP CLASSIFICATION DEMO
+# ============================================================================
+elif app_mode == "5. FYP Classification Demo":
+    st.markdown("### FYP Classification Demo")
+    st.markdown(
+        "Classify a rehabilitation exercise as **Complete** or **Incomplete** "
+        "using the trained RF / Angular-DTW models from the FYP benchmark study."
+    )
+
+    _fyp_col_left, _fyp_col_right = st.columns([1, 2])
+    with _fyp_col_left:
+        _fyp_det  = st.selectbox("Pose Detector", ["YOLO", "MediaPipe"])
+        _fyp_clf  = st.selectbox("Classifier",    ["Random Forest", "Angular DTW"])
+        _fyp_ex   = st.selectbox(
+            "Exercise",
+            FYP_EXERCISES,
+            format_func=lambda x: _FYP_EX_LABELS.get(x, x),
+        )
+        _fyp_mode = st.radio("Input Type", ["Upload CSV", "Upload Video"])
+
+    with _fyp_col_right:
+        if _fyp_mode == "Upload CSV":
+            st.markdown(
+                "Upload a pre-extracted keypoint CSV. "
+                "YOLO → columns `kp0_x`, `kp0_y`, `kp0_conf` … `kp16_conf`.  "
+                "MediaPipe → columns `lm0_x`, `lm0_y`, `lm0_z`, `lm0_vis` … `lm32_vis`."
+            )
+            _fyp_csv = st.file_uploader("Keypoint CSV", type=["csv"], key="fyp_csv")
+            if _fyp_csv:
+                _df_up = pd.read_csv(_fyp_csv)
+                st.caption(f"Loaded {len(_df_up)} frames, {len(_df_up.columns)} columns.")
+                _feats, _angles = _features_from_df(_df_up, _fyp_det)
+                if _feats is None:
+                    st.error("Could not extract features — check CSV column format and ensure ≥ 5 valid frames.")
+                else:
+                    if _fyp_clf == "Random Forest":
+                        _pred, _conf, _err = _classify_rf(_feats, _fyp_det, _fyp_ex)
+                        _d_c = _d_i = None
+                    else:
+                        _centroids = _load_dtw_centroids()
+                        _pred, _d_c, _d_i, _err = _classify_dtw(_angles, _fyp_det, _fyp_ex, _centroids)
+                        _conf = None
+                    if _err:
+                        st.error(_err)
+                    else:
+                        _show_clf_result(_pred, _fyp_clf, _conf, _d_c, _d_i)
+
+        else:  # Video upload
+            st.markdown(
+                "Upload an exercise video. The detector will extract keypoints frame-by-frame, "
+                "compute joint angles, and classify the rep."
+            )
+            _fyp_vid = st.file_uploader("Exercise Video", type=["mp4", "mov", "avi"], key="fyp_vid")
+            if _fyp_vid:
+                _tmp_vid = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                _tmp_vid.write(_fyp_vid.read())
+                _tmp_vid.flush()
+                _centroids_v = _load_dtw_centroids() if _fyp_clf == "Angular DTW" else None
+
+                if _fyp_det == "YOLO":
+                    _out_path, _bundle, _verr = _process_video_yolo(
+                        _tmp_vid.name, _fyp_ex, _fyp_clf, _centroids_v
+                    )
+                else:
+                    _ensure_mp_task_model()
+                    _out_path, _bundle, _verr = _process_video_mp(
+                        _tmp_vid.name, _fyp_ex, _fyp_clf, _centroids_v
+                    )
+
+                if _verr:
+                    st.error(_verr)
+                elif _bundle:
+                    _show_clf_result(
+                        _bundle["pred"], _fyp_clf,
+                        _bundle.get("conf"), _bundle.get("d_c"), _bundle.get("d_i"),
+                    )
+                    st.caption(
+                        f"Processed {_bundle['n_frames']} frames — "
+                        f"keypoints detected in {_bundle['det_frames']} frames."
+                    )
+                    if _out_path and os.path.exists(_out_path):
+                        with open(_out_path, "rb") as _vf:
+                            st.video(_vf.read())
+
+# ============================================================================
+# MODE 6: FYP BENCHMARK RESULTS
+# ============================================================================
+elif app_mode == "6. FYP Benchmark Results":
+    st.markdown("### FYP Benchmark Results")
+    st.markdown(
+        "Evaluation of the Random Forest and Angular DTW classifiers on the "
+        "Nandana et al. 2026 leave-one-subject-out test set. "
+        "4 exercises × 2 detectors × 2 classifiers = **16 combinations**."
+    )
+
+    _r6_tab_chart, _r6_tab_dtw, _r6_tab_table, _r6_tab_cm = st.tabs([
+        "Comparison Chart", "DTW Distribution", "Metrics Table", "Confusion Matrices"
+    ])
+
+    with _r6_tab_chart:
+        _chart_p = _OUT_DIR / "comparison_chart.png"
+        if _chart_p.exists():
+            st.image(str(_chart_p), use_container_width=True)
+        else:
+            st.warning("Run `python scripts/evaluate_and_report.py` to generate outputs.")
+
+    with _r6_tab_dtw:
+        _dtw_p = _OUT_DIR / "dtw_distribution.png"
+        if _dtw_p.exists():
+            st.image(str(_dtw_p), use_container_width=True)
+        else:
+            st.warning("Run `python scripts/evaluate_and_report.py` to generate outputs.")
+
+    with _r6_tab_table:
+        _csv_p = _OUT_DIR / "metrics_table.csv"
+        if _csv_p.exists():
+            _mt = pd.read_csv(_csv_p)
+            _f1_cols = [c for c in _mt.columns if "f1" in c.lower() or c.lower() == "f1"]
+            _styled = _mt.style
+            for _fc in _f1_cols:
+                _styled = _styled.map(_f1_color, subset=[_fc])
+            st.dataframe(_styled, hide_index=True, use_container_width=True)
+            st.caption("F1 colour: green > 0.70, amber 0.40–0.70, red < 0.40")
+            with open(str(_csv_p), "rb") as _cf:
+                st.download_button("Download CSV", _cf, file_name="metrics_table.csv", mime="text/csv")
+        else:
+            st.warning("Run `python scripts/evaluate_and_report.py` to generate outputs.")
+
+    with _r6_tab_cm:
+        _cm_choices = sorted(_CM_DIR.glob("*.png")) if _CM_DIR.exists() else []
+        if _cm_choices:
+            _cm_names = [p.stem for p in _cm_choices]
+            _cm_sel   = st.selectbox("Select confusion matrix", _cm_names)
+            _cm_path  = _CM_DIR / f"{_cm_sel}.png"
+            st.image(str(_cm_path), use_container_width=True)
+        else:
+            st.warning("Run `python scripts/evaluate_and_report.py` to generate confusion matrices.")
 
 # ============================================================================
 # GLOBAL FOOTER
