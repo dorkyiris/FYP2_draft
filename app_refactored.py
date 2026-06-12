@@ -45,7 +45,6 @@ logger = logging.getLogger(__name__)
 
 # ── FYP classification pipeline ───────────────────────────────────────────────
 import sys
-import time
 import joblib
 import urllib.request
 from pathlib import Path
@@ -169,7 +168,6 @@ def _classify_dtw(angles, detector, exercise, centroids):
 def _show_clf_result(pred, classifier, conf=None, d_c=None, d_i=None):
     label = "Complete" if pred == 1 else "Incomplete"
     icon  = "✅" if pred == 1 else "❌"
-    color = "green" if pred == 1 else "red"
     st.markdown(
         f"<div style='padding:16px 20px;border-radius:8px;"
         f"background:{'#d4edda' if pred==1 else '#f8d7da'};"
