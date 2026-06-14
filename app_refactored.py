@@ -717,7 +717,7 @@ elif app_mode == "4. Project Analytics & Stats":
     st.markdown("### Project Analytics — Nandana et al. (2026) Dataset")
     st.markdown("Angular DTW classification · MediaPipe BlazePose & YOLOv8-Pose · 4 exercises")
 
-    _BASE = "An_upper_limb_stroke_rehabilitation_exercise_video"
+    _BASE = "assets/data"
 
     # Notebook colour palette
     _C = {

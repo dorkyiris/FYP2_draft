@@ -1,0 +1,41 @@
+Exercise,Pipeline,Accuracy
+"Exercise 1
+(Lifting an Object)",YOLOv8 (Raw),50.8
+"Exercise 1
+(Lifting an Object)",YOLOv8 + EMA Filter,50.8
+"Exercise 1
+(Lifting an Object)",MediaPipe (Raw),52.5
+"Exercise 1
+(Lifting an Object)",MediaPipe + EMA Filter,53.3
+"Exercise 1
+(Lifting an Object)",Nandana et al. 2026 (3D CNN Baseline),40.0
+"Exercise 2
+(Extending the Elbow)",YOLOv8 (Raw),70.6
+"Exercise 2
+(Extending the Elbow)",YOLOv8 + EMA Filter,70.6
+"Exercise 2
+(Extending the Elbow)",MediaPipe (Raw),57.9
+"Exercise 2
+(Extending the Elbow)",MediaPipe + EMA Filter,56.3
+"Exercise 2
+(Extending the Elbow)",Nandana et al. 2026 (3D CNN Baseline),40.0
+"Exercise 3
+(Lifting the Wrist)",YOLOv8 (Raw),47.5
+"Exercise 3
+(Lifting the Wrist)",YOLOv8 + EMA Filter,48.3
+"Exercise 3
+(Lifting the Wrist)",MediaPipe (Raw),55.8
+"Exercise 3
+(Lifting the Wrist)",MediaPipe + EMA Filter,48.3
+"Exercise 3
+(Lifting the Wrist)",Nandana et al. 2026 (3D CNN Baseline),40.0
+"Exercise 4
+(Opening the Hand)",YOLOv8 (Raw),60.5
+"Exercise 4
+(Opening the Hand)",YOLOv8 + EMA Filter,60.5
+"Exercise 4
+(Opening the Hand)",MediaPipe (Raw),53.8
+"Exercise 4
+(Opening the Hand)",MediaPipe + EMA Filter,53.8
+"Exercise 4
+(Opening the Hand)",Nandana et al. 2026 (3D CNN Baseline),40.0
