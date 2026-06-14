@@ -2,6 +2,8 @@
 
 Upper-limb stroke rehabilitation assessment using MediaPipe pose estimation and biomechanical angle analysis.
 
+**Live demo:** https://fyp2draft-tele7zpcsvsxbydhrovtrn.streamlit.app
+
 ---
 
 ## Quick Start
