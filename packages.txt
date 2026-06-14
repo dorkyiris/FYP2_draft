@@ -1,5 +1,8 @@
 libgl1
+libglx-mesa0
+libegl1
 libglib2.0-0t64
+libgomp1
 libsm6
 libxrender1
 libxext6

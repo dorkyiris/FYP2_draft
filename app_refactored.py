@@ -675,6 +675,14 @@ elif app_mode == "2. Upload Video Analysis (MP4)":
 # ============================================================================
 elif app_mode == "3. Live Webcam Analysis":
     st.markdown("### Real-Time Webcam Analysis")
+    # Webcam requires a local machine — Streamlit Cloud has no camera hardware
+    if os.path.exists("/mount/src"):
+        st.info(
+            "**Webcam mode is not available on Streamlit Cloud.**  \n"
+            "Clone the repo and run `streamlit run app_refactored.py` locally to use this feature."
+        )
+        st.stop()
+
     st.warning("Make sure your terminal has permission to access the Mac Camera!")
 
     start_cam = st.checkbox("Turn On Webcam")
